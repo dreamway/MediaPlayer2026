@@ -1197,7 +1197,7 @@ int64_t PlayController::getCurrentPositionMs() const
     // 通过主时钟获取当前播放位置
     // 注意：在新架构中，使用 getMasterClock() 获取主时钟（音频或视频）
     nanoseconds masterClock = getMasterClock();
-    if (masterClock != nanoseconds::min()) {
+    if (isValidTimestamp(masterClock)) {
         int64_t positionMs = std::chrono::duration_cast<milliseconds>(masterClock).count();
         // 验证返回值是否有效（避免负数或过大值导致UI错误）
         if (positionMs < 0) {
@@ -1562,10 +1562,9 @@ nanoseconds PlayController::getMasterClock() const
     // 修复：音视频同步、进度条与实际播放不同步（日志分析 BUG 1、3）
     if (sync_ == SyncMaster::Audio && audioThread_) {
         nanoseconds audioClock = audioThread_->getClock();
-        if (audioClock != nanoseconds::min()) {
+        if (isValidTimestamp(audioClock)) {
             nanoseconds basePts = getBasePts();
-            // getClock 返回相对 basePts 的偏移，需加上 basePts 得到绝对位置
-            if (basePts != nanoseconds::min()) {
+            if (isValidTimestamp(basePts)) {
                 return basePts + audioClock;
             }
             // basePts 未设置时（如 seek 后尚未开始），若 AVClock 有 initialValue 则使用
@@ -1585,11 +1584,16 @@ nanoseconds PlayController::getMasterClock() const
 
     // Fallback 到视频时钟
     nanoseconds videoClock = getVideoClock();
-    return videoClock != nanoseconds::min() ? videoClock : nanoseconds::zero();
+    return isValidTimestamp(videoClock) ? videoClock : nanoseconds::zero();
 }
 
 void PlayController::updateVideoClock(nanoseconds pts)
 {
+    // 防止无效时间戳导致后续算术溢出
+    if (!isValidTimestamp(pts)) {
+        pts = nanoseconds(0);
+    }
+
     // 更新视频时钟（由 VideoThread 在渲染帧时调用）
     // 同时更新 AVClock 和旧的视频时钟（用于 fallback）
 
@@ -1618,6 +1622,12 @@ nanoseconds PlayController::getVideoClock() const
         return videoClock_; // 返回当前值，即使未获取锁
     } else {
         nanoseconds result = videoClock_;
+
+        // 防止对无效时间戳做算术运算（溢出风险）
+        if (!isValidTimestamp(result)) {
+            const_cast<ThreadSyncManager &>(threadSyncManager_).unlock(const_cast<std::mutex &>(videoClockMutex_));
+            return kInvalidTimestamp;
+        }
 
         // 如果 videoClockTime_ 已设置，计算实时时钟
         if (videoClockTime_ != std::chrono::steady_clock::time_point{}) {

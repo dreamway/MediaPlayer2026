@@ -281,10 +281,15 @@ bool DemuxerThread::readAndDistributePacket()
             // 队列还有数据，继续等待
             return true;
         } else {
-            // 读取失败但不是 EOF，可能是其他错误
-            logger->warn("Failed to read packet from Demuxer (not EOF)");
+            // 读取失败但不是 EOF，使用错误恢复管理器决定后续动作
+            ErrorInfo error(ErrorType::DecodeError, "Failed to read packet from Demuxer (not EOF)");
+            RecoveryResult recovery = errorRecoveryManager_.handleError(error);
+            if (!recovery.shouldContinue) {
+                logger->error("DemuxerThread: Max read retries exceeded, stopping");
+                return false;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            return true; // 继续循环
+            return true;
         }
     }
 

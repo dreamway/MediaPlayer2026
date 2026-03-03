@@ -52,6 +52,11 @@ int Audio::initAL()
 
 bool Audio::open(ALenum format, ALuint frameSize, int sampleRate)
 {
+    // 先释放已有资源，避免泄漏（重复打开视频时）
+    if (source_ != 0) {
+        close();
+    }
+
     std::lock_guard<std::mutex> lock(srcMutex_);
 
     format_ = format;
@@ -302,7 +307,7 @@ bool Audio::writeAudio(const uint8_t *samples, unsigned int length)
                     // 关键：使用当前音频帧的PTS作为基准，而不是0，确保与视频基准一致
                     // 如果basePts还未设置，使用当前音频帧的PTS作为全局基准
                     nanoseconds currentBasePts = controller_.getBasePts();
-                    if (currentBasePts == nanoseconds::min()) {
+                    if (currentBasePts == kInvalidTimestamp) {
                         controller_.setBasePts(currentPts_);
                     }
                     if (deviceStartTime_ == std::chrono::steady_clock::time_point{}) {
@@ -312,7 +317,7 @@ bool Audio::writeAudio(const uint8_t *samples, unsigned int length)
                     playbackStarted_ = true;
                 } else {
                     nanoseconds currentBasePts = controller_.getBasePts();
-                    if (currentBasePts == nanoseconds::min()) {
+                    if (currentBasePts == kInvalidTimestamp) {
                         controller_.setBasePts(currentPts_);
                     }
                     playbackStarted_ = true;
@@ -320,7 +325,7 @@ bool Audio::writeAudio(const uint8_t *samples, unsigned int length)
             }
         } else if (playbackStarted_) {
             nanoseconds currentBasePts = controller_.getBasePts();
-            if (currentBasePts == nanoseconds::min()) {
+            if (currentBasePts == kInvalidTimestamp) {
                 controller_.setBasePts(currentPts_);
             }
         }
@@ -514,12 +519,12 @@ nanoseconds Audio::getClockNoLock()
     nanoseconds basePts = controller_.getBasePts();
     
     // 如果basePts未设置，使用currentPts_作为基准（向后兼容）
-    if (basePts == nanoseconds::min()) {
+    if (basePts == kInvalidTimestamp) {
         basePts = currentPts_;
     }
     
     // 对齐到基准：pts = currentPts_ - basePts（从0开始）
-    if (basePts != nanoseconds::min() && currentPts_ >= basePts) {
+    if (basePts != kInvalidTimestamp && currentPts_ >= basePts) {
         pts = currentPts_ - basePts;
     } else {
         // 如果currentPts_ < basePts，说明还没开始播放，返回0

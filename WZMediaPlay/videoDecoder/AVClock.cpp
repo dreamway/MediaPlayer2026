@@ -59,6 +59,7 @@ void AVClock::updateValue(double pts)
     
     if (clockType_ == AudioClock) {
         audioPts_ = pts;
+        hasAudioPts_ = true;
         nbUpdated_++;
     }
     // 其他时钟类型不更新 audioPts_
@@ -84,8 +85,8 @@ double AVClock::value() const
     switch (clockType_) {
     case AudioClock:
         // 音频时钟：未收到 PTS 时用 initialValue（如 seek 后），否则用 audioPts_ + delay_
-        // 修复：audioPts_==0 时不应重复累加 initialValue_；audioPts_!=0 时不再加 initialValue_（已是绝对 PTS）
-        return (audioPts_ == 0.0 ? initialValue_ : audioPts_ + delay_);
+        // 使用 hasAudioPts_ 标志区分"尚未收到 PTS"和"合法 PTS=0"
+        return (!hasAudioPts_ ? initialValue_ : audioPts_ + delay_);
         
     case ExternalClock:
         // 外部时钟：基于计时器
@@ -215,6 +216,7 @@ void AVClock::reset()
     QMutexLocker locker(&mutex_);
     
     audioPts_ = 0.0;
+    hasAudioPts_ = false;
     videoPts_ = 0.0;
     delay_ = 0.0;
     nbUpdated_ = 0;

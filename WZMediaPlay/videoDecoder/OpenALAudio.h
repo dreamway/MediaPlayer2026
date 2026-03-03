@@ -8,6 +8,7 @@
 
 #include <array>
 #include <queue>
+#include <vector>
 #include <QThread>
 
 // Per-buffer size, in time - 减少缓冲区大小以加快响应
@@ -18,41 +19,64 @@ constexpr auto AudioBufferCount = AudioBufferTotalTime / AudioBufferTime; // 自
 
 class PlayController; // Forward declaration
 
-// RAII包装类管理OpenAL资源
-class ALSourceGuard
+/**
+ * ALResources: RAII 管理 OpenAL source + buffers 生命周期
+ * 创建时分配资源，析构时自动释放，避免泄漏
+ */
+class ALResources
 {
 public:
-    explicit ALSourceGuard(ALuint source)
-        : source_(source)
-    {}
-    ~ALSourceGuard()
+    ALResources() = default;
+    ~ALResources() { destroy(); }
+
+    ALResources(const ALResources &) = delete;
+    ALResources &operator=(const ALResources &) = delete;
+
+    bool create(size_t bufferCount)
     {
+        destroy();
+        buffers_.resize(bufferCount, 0);
+        alGenBuffers(static_cast<ALsizei>(bufferCount), buffers_.data());
+        if (alGetError() != AL_NO_ERROR) { buffers_.clear(); return false; }
+        alGenSources(1, &source_);
+        if (alGetError() != AL_NO_ERROR) {
+            alDeleteBuffers(static_cast<ALsizei>(buffers_.size()), buffers_.data());
+            buffers_.clear();
+            return false;
+        }
+        valid_ = true;
+        return true;
+    }
+
+    void destroy()
+    {
+        if (!valid_) return;
         if (source_ != 0) {
+            alSourceStop(source_);
+            ALint queued = 0;
+            alGetSourcei(source_, AL_BUFFERS_QUEUED, &queued);
+            while (queued-- > 0) {
+                ALuint buf;
+                alSourceUnqueueBuffers(source_, 1, &buf);
+            }
             alDeleteSources(1, &source_);
+            source_ = 0;
         }
+        if (!buffers_.empty()) {
+            alDeleteBuffers(static_cast<ALsizei>(buffers_.size()), buffers_.data());
+            buffers_.clear();
+        }
+        valid_ = false;
     }
-    operator ALuint() const { return source_; }
+
+    bool isValid() const { return valid_; }
+    ALuint source() const { return source_; }
+    const std::vector<ALuint> &buffers() const { return buffers_; }
 
 private:
-    ALuint source_;
-};
-
-class ALBufferGuard
-{
-public:
-    explicit ALBufferGuard(ALuint buffer)
-        : buffer_(buffer)
-    {}
-    ~ALBufferGuard()
-    {
-        if (buffer_ != 0) {
-            alDeleteBuffers(1, &buffer_);
-        }
-    }
-    operator ALuint() const { return buffer_; }
-
-private:
-    ALuint buffer_;
+    ALuint source_{0};
+    std::vector<ALuint> buffers_;
+    bool valid_{false};
 };
 
 /**

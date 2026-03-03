@@ -186,7 +186,7 @@ bool VideoThread::handleSeekingState(bool &wasSeekingBefore)
                 logger->debug("VideoThread::handleSeekingState: Flushed decoder at seeking start");
             }
 
-            controller_->updateVideoClock(nanoseconds::min());
+            controller_->updateVideoClock(kInvalidTimestamp);
         }
 
         // 在 seeking 期间，消费队列中的旧数据包（防止队列满导致死锁）
@@ -229,6 +229,7 @@ bool VideoThread::handleSeekingState(bool &wasSeekingBefore)
     if (wasSeekingBefore && !isSeeking) {
         wasSeekingBefore = false;
         wasSeekingRecently_ = true;
+        videoBasePtsSet = false;  // 重置视频基准 PTS，让 Seek 后第一帧重新建立基准
         seekingStartTime_ = std::chrono::steady_clock::now(); // 记录seeking开始时间，用于超时保护
         eofAfterSeekCount_ = 0;
 
@@ -252,7 +253,7 @@ bool VideoThread::handleSeekingState(bool &wasSeekingBefore)
             }
         }
 
-        controller_->updateVideoClock(nanoseconds::min());
+        controller_->updateVideoClock(kInvalidTimestamp);
     }
 
     return false; // 不需要 continue，继续正常流程
@@ -426,7 +427,7 @@ bool VideoThread::processDecodeResult(int bytesConsumed, Frame &videoFrame, bool
 
         // 检查 videoSeekPos
         double videoSeekPos = controller_->getVideoSeekPos();
-        if (videoSeekPos > 0.0 && !videoFrame.isEmpty() && videoFrame.ts() != nanoseconds::min()) {
+        if (videoSeekPos > 0.0 && !videoFrame.isEmpty() && isValidTimestamp(videoFrame.ts())) {
             double framePtsSeconds = videoFrame.ts().count() / 1e9;
             if (framePtsSeconds < videoSeekPos) {
                 videoFrame.clear();
@@ -456,7 +457,7 @@ bool VideoThread::processDecodeResult(int bytesConsumed, Frame &videoFrame, bool
         // 不 pop packet，但可以渲染这一帧
         // 检查 videoSeekPos
         double videoSeekPos = controller_->getVideoSeekPos();
-        if (videoSeekPos > 0.0 && !videoFrame.isEmpty() && videoFrame.ts() != nanoseconds::min()) {
+        if (videoSeekPos > 0.0 && !videoFrame.isEmpty() && isValidTimestamp(videoFrame.ts())) {
             double framePtsSeconds = videoFrame.ts().count() / 1e9;
             if (framePtsSeconds < videoSeekPos) {
                 videoFrame.clear();
@@ -643,7 +644,7 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
 
     // 获取视频帧时间戳
     nanoseconds framePts = videoFrame.ts();
-    if (framePts == nanoseconds::min()) {
+    if (!isValidTimestamp(framePts)) {
         // 无效的PTS，跳过帧
         return false;
     }
@@ -661,7 +662,7 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
         controller_->setVideoBasePts(framePts);
         // 如果basePts还未设置，使用视频第一帧的PTS作为全局基准
         nanoseconds currentBasePts = controller_->getBasePts();
-        if (currentBasePts == nanoseconds::min()) {
+        if (!isValidTimestamp(currentBasePts)) {
             controller_->setBasePts(framePts);
             SPDLOG_LOGGER_INFO(
                 logger, "VideoThread::renderFrame: Set basePts to video first frame PTS: {}ms", std::chrono::duration_cast<milliseconds>(framePts).count());
@@ -685,17 +686,17 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
     nanoseconds videoBasePts = controller_->getVideoBasePts();
 
     // 优先使用basePts（全局基准），如果未设置则使用videoBasePts
-    nanoseconds referencePts = (basePts != nanoseconds::min()) ? basePts : videoBasePts;
+    nanoseconds referencePts = isValidTimestamp(basePts) ? basePts : videoBasePts;
 
-    if (referencePts != nanoseconds::min()) {
+    if (isValidTimestamp(referencePts)) {
         // 视频时钟基准对齐：减去基准PTS，使其从 0 开始
         adjustedFramePts = framePts - referencePts;
         if (logger && (frameCount_ % 100 == 0)) { // 每100帧输出一次
             logger->debug(
                 "VideoThread::renderFrame: framePts={}ms, basePts={}ms, videoBasePts={}ms, adjustedFramePts={}ms",
                 std::chrono::duration_cast<milliseconds>(framePts).count(),
-                basePts != nanoseconds::min() ? std::chrono::duration_cast<milliseconds>(basePts).count() : -1,
-                videoBasePts != nanoseconds::min() ? std::chrono::duration_cast<milliseconds>(videoBasePts).count() : -1,
+                isValidTimestamp(basePts) ? std::chrono::duration_cast<milliseconds>(basePts).count() : -1,
+                isValidTimestamp(videoBasePts) ? std::chrono::duration_cast<milliseconds>(videoBasePts).count() : -1,
                 std::chrono::duration_cast<milliseconds>(adjustedFramePts).count());
         }
     }
@@ -706,20 +707,20 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
     nanoseconds masterClock = controller_->getMasterClock();
 
     // Fallback: 若 getMasterClock 未准备好，使用 AVClock
-    if (masterClock == nanoseconds::min()) {
+    if (!isValidTimestamp(masterClock)) {
         AVClock *avClock = controller_->getAVClock();
         if (avClock && avClock->isActive()) {
             double clockValue = avClock->value();
             masterClock = nanoseconds{static_cast<long long>(clockValue * 1000000000.0)};
         }
     }
-    if (masterClock == nanoseconds::min()) {
+    if (!isValidTimestamp(masterClock)) {
         masterClock = controller_->getVideoClock();
-        if (masterClock != nanoseconds::min() && referencePts != nanoseconds::min()) {
+        if (isValidTimestamp(masterClock) && isValidTimestamp(referencePts)) {
             // getVideoClock 返回相对 basePts 的偏移，需加上 basePts 得到绝对位置
             masterClock = referencePts + masterClock;
         }
-        if (masterClock == nanoseconds::min()) {
+        if (!isValidTimestamp(masterClock)) {
             masterClock = framePts; // 使用帧 PTS 作为临时时钟（已是绝对位置）
             if (logger) {
                 logger->debug(
@@ -889,9 +890,8 @@ void VideoThread::run()
         }
     }
 
-    // 用于跟踪 seeking 状态变化的静态变量（在循环外定义，在循环开始时重置）
-    static bool wasSeekingBefore = false;
-    wasSeekingBefore = false; // 每次线程启动时重置
+    // 用于跟踪 seeking 状态变化（每次线程启动时重置）
+    bool wasSeekingBefore = false;
 
     try {
         int loopCount = 0;

@@ -87,6 +87,7 @@ private:
 
     // PTS 值
     double audioPts_ = 0.0;  // 音频 PTS
+    bool hasAudioPts_ = false;  // 是否已收到音频 PTS（区分合法 PTS=0 和未初始化）
     double videoPts_ = 0.0;  // 视频 PTS
     double delay_ = 0.0;     // 延迟
     double initialValue_ = 0.0;  // 初始值

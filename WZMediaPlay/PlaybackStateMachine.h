@@ -49,6 +49,11 @@ public:
 
     // 状态转换（带验证）
     bool canTransitionTo(PlaybackState newState) const;
+
+    // Seeking 状态管理（统一入口/出口，确保所有标志正确重置）
+    bool enterSeeking(const std::string& reason = "");
+    bool exitSeeking(const std::string& reason = "");
+    PlaybackState preSeekState() const { return preSeekState_.load(std::memory_order_acquire); }
     
     // 获取状态名称（用于日志）
     static const char* stateName(PlaybackState state);
@@ -63,6 +68,7 @@ private:
     // 状态
     mutable std::mutex stateMutex_;
     std::atomic<PlaybackState> currentState_;
+    std::atomic<PlaybackState> preSeekState_{PlaybackState::Playing};
     
     // 状态变化回调
     std::function<void(PlaybackState, PlaybackState, const std::string&)> stateChangeCallback_;
