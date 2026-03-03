@@ -585,7 +585,7 @@ QRect DrawWidget::getRegion()
 }
 
 void DrawWidget::show() {
-    __super::show();
+    QWidget::show();
     if (m_currentCaptureState == CaptureState::FinishCapture) {
         m_currentCaptureState = CaptureState::FinishMoveCaptureArea;
     }

@@ -177,7 +177,7 @@ bool VideoThread::handleSeekingState(bool &wasSeekingBefore)
                 SPDLOG_LOGGER_ERROR(logger, "VideoThread::handleSeekingState: Exception while pre-decoding: {}", e.what());
             }
 
-            SPDLOG_LOGGER_DEBUG("VideoThread::handleSeekingState: Pre-decoded {} keyframes", keyFrameCount);
+            SPDLOG_LOGGER_DEBUG(logger, "VideoThread::handleSeekingState: Pre-decoded {} keyframes", keyFrameCount);
 
             // 刷新解码器，丢弃所有待解码的帧
             dec_->flushBuffers();
@@ -394,7 +394,11 @@ bool VideoThread::decodeFrame(Frame &videoFrame, int &bytesConsumed, AVPixelForm
                 auto now = std::chrono::system_clock::now();
                 auto time_t_now = std::chrono::system_clock::to_time_t(now);
                 std::tm tm_now;
+#ifdef _MSC_VER
                 localtime_s(&tm_now, &time_t_now);
+#else
+                localtime_r(&time_t_now, &tm_now);
+#endif
 
                 char timeStr[20];
                 strftime(timeStr, sizeof(timeStr), "%y%m%d-%H%M%S", &tm_now);

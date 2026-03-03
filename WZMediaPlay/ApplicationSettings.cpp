@@ -543,7 +543,7 @@ void ApplicationSettings::write_PlayList()
     QJsonObject rootObj;
     rootObj.insert("playlist_current_index", GlobalDef::getInstance()->PLAY_LIST_DATA.playlist_current_index);
     rootObj.insert("playlist_current_video", GlobalDef::getInstance()->PLAY_LIST_DATA.playlist_current_video);
-    rootObj.insert("playlist_video_play_time", GlobalDef::getInstance()->PLAY_LIST_DATA.playlist_video_play_time);
+    rootObj.insert("playlist_video_play_time", static_cast<qint64>(GlobalDef::getInstance()->PLAY_LIST_DATA.playlist_video_play_time));
     QJsonArray playListJsonArray;
     for (int i = 0; i < GlobalDef::getInstance()->PLAY_LIST_DATA.play_list.size(); ++i) {
         QJsonObject itemObj;

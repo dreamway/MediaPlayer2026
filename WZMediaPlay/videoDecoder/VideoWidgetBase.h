@@ -3,7 +3,7 @@
 #include "VideoRenderer.h"
 #include "../GlobalDef.h"
 
-#include <QWidget>
+#include <QOpenGLWidget>
 #include <QImage>
 #include <memory>
 
@@ -22,13 +22,13 @@
  * - 支持动态切换渲染器而无需重建 VideoWidget
  * - MainWindow 只操作 VideoWidgetBase 接口，不依赖具体实现
  */
-class VideoWidgetBase : public QWidget
+class VideoWidgetBase : public QOpenGLWidget
 {
     Q_OBJECT
 
 public:
     explicit VideoWidgetBase(QWidget *parent = nullptr)
-        : QWidget(parent)
+        : QOpenGLWidget(parent)
     {
     }
 

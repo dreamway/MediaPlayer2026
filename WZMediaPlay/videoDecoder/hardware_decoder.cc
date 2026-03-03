@@ -9,10 +9,19 @@ extern "C" {
 #include <libavutil/pixdesc.h>  // 需要AVPixFmtDescriptor和AV_PIX_FMT_FLAG_HWACCEL
 }
 
-// 支持的硬件解码器列表（按优先级排序）
+// 支持的硬件解码器列表（按优先级排序，按平台区分）
 const char *HardwareDecoder::SUPPORTED_HW_DECODERS[] = {
+#ifdef _WIN32
     "d3d11va", // Windows DirectX 11
-    "cuda",    // NVIDIA CUDA (已验证可以工作)
+#endif
+#ifdef __linux__
+    "vaapi",   // Linux VA-API (Intel/AMD)
+    "vdpau",   // Linux VDPAU (NVIDIA legacy)
+#endif
+#ifdef __APPLE__
+    "videotoolbox", // macOS VideoToolbox
+#endif
+    "cuda",    // NVIDIA CUDA (cross-platform)
 };
 
 const int HardwareDecoder::NUM_SUPPORTED_DECODERS = sizeof(SUPPORTED_HW_DECODERS) / sizeof(SUPPORTED_HW_DECODERS[0]);

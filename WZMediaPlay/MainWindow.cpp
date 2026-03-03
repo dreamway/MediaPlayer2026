@@ -20,11 +20,16 @@
 #include "utils/ErrorCode.h"
 
 #include "UdpWorker.h"
+#ifdef Q_OS_WIN
 #include <Windows.h>
+#include <wtsapi32.h>
+#endif
 #include <algorithm>
 #include <chrono>
 #include <iostream>
-#include <wtsapi32.h>
+#if !defined(_MSC_VER) && (defined(__x86_64__) || defined(__i386__))
+#include <cpuid.h>
+#endif
 #include <QAction>
 #include <QActionGroup>
 #include <QCryptographicHash>
@@ -57,10 +62,12 @@ MainWindow::MainWindow(QWidget *parent)
                                               << ".wzmkv" << ".wzmov" << ".wzmpg";
 
     if (GlobalDef::getInstance()->LOG_MODE == 1) {
+#ifdef Q_OS_WIN
         AllocConsole();
         FILE *unused1, *unused2;
         freopen_s(&unused1, "CONOUT$", "w", stdout);
         freopen_s(&unused2, "CONOUT$", "w", stderr);
+#endif
     }
 
     ////Setup Logger
@@ -322,7 +329,9 @@ MainWindow::~MainWindow()
         playController_ = nullptr;
     }
     if (GlobalDef::getInstance()->LOG_MODE == 1) {
+#ifdef Q_OS_WIN
         FreeConsole();
+#endif
     }
     if (logger) {
         logger->flush();
@@ -671,14 +680,16 @@ QStringList MainWindow::getDeviceInfo()
 
 void MainWindow::getcpuid(unsigned int CPUInfo[4], unsigned int InfoType)
 {
-#if defined(__GNUC__) // GCC
+#if defined(_MSC_VER)
+    #if _MSC_VER >= 1400
+        __cpuid((int *) (void *) CPUInfo, (int) (InfoType));
+    #else
+        getcpuidex(CPUInfo, InfoType, 0);
+    #endif
+#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
     __cpuid(InfoType, CPUInfo[0], CPUInfo[1], CPUInfo[2], CPUInfo[3]);
-#elif defined(_MSC_VER) // MSVC
-#if _MSC_VER >= 1400    // VC2005  __cpuid
-    __cpuid((int *) (void *) CPUInfo, (int) (InfoType));
-#else                   //  getcpuidex
-    getcpuidex(CPUInfo, InfoType, 0);
-#endif
+#else
+    CPUInfo[0] = CPUInfo[1] = CPUInfo[2] = CPUInfo[3] = 0;
 #endif
 }
 
@@ -925,9 +936,10 @@ void MainWindow::registerSysNotification()
 
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
 {
+#ifdef Q_OS_WIN
     MSG *msg = (MSG *) message;
     switch (msg->message) {
-    case WM_WTSSESSION_CHANGE: //判断登录、注销、锁屏等
+    case WM_WTSSESSION_CHANGE:
     {
         switch (msg->wParam) {
         case WTS_SESSION_LOCK:
@@ -938,13 +950,11 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
                 playController_->pause();
                 ui.playWidget->PlayPause(shouldPause);
             }
-
             break;
         case WTS_SESSION_UNLOCK:
             logger->info("解锁, Should Resume Playing");
             if (playerIsPlayingBeforeScreenLockOrPowerSleep) {
                 if (playController_->isPaused()) {
-                    //锁屏之后恢复 播放
                     playController_->play();
                     ui.playWidget->PlayPause(false);
                 }
@@ -962,7 +972,8 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
         default:
             break;
         }
-
+        break;
+    }
     case WM_POWERBROADCAST: {
         switch (msg->wParam) {
         case PBT_APMSUSPEND:
@@ -973,20 +984,15 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
                 playController_->pause();
                 ui.playWidget->PlayPause(shouldPause);
             }
-
             break;
         case PBT_APMRESUMEAUTOMATIC:
             logger->info("系统从休眠状态恢复");
             if (playerIsPlayingBeforeScreenLockOrPowerSleep) {
                 if (playController_->isPaused()) {
-                    //锁屏之后恢复 播放
                     playController_->play();
                     ui.playWidget->PlayPause(false);
                 }
-
-                // 休眠恢复后，检查渲染是否正常，如果渲染定时器停止则重启
                 if (ui.playWidget && ui.playWidget->IsRendering()) {
-                    // 强制触发一次渲染，检查OpenGL上下文是否恢复
                     ui.playWidget->update();
                     logger->info("System resumed, forced render update to check OpenGL context recovery");
                 }
@@ -998,12 +1004,16 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
         default:
             break;
         }
-    }
+        break;
     }
     default:
         break;
     }
-
+#else
+    Q_UNUSED(eventType);
+    Q_UNUSED(message);
+    Q_UNUSED(result);
+#endif
     return QMainWindow::nativeEvent(eventType, message, result);
 }
 
@@ -1518,8 +1528,10 @@ void MainWindow::on_pushButton_max_clicked()
     }
 
     logger->info("Shell_TrayWnd show when on_pushButton_max_clicked");
+#ifdef Q_OS_WIN
     HWND handle = FindWindowA("Shell_TrayWnd", "");
     ShowWindow(handle, SW_SHOW);
+#endif
 }
 
 void MainWindow::on_pushButton_fullScreen_clicked()
@@ -1553,8 +1565,10 @@ void MainWindow::on_pushButton_fullScreen_clicked()
         }
         // 还原之前隐藏的任务栏
         logger->info("Shell_TrayWnd show when Not in Fullscreen Mode");
+#ifdef Q_OS_WIN
         HWND handle = FindWindowA("Shell_TrayWnd", "");
         ShowWindow(handle, SW_SHOW);
+#endif
     } else {
         //  Normal/Max 状态切  Fullscreen 状态
         //  //this->setWindowState(Qt::WindowFullScreen); //全屏GLWidget显示会有BUG
@@ -1602,7 +1616,9 @@ void MainWindow::on_pushButton_fullScreen_clicked()
             mWindowSizeState = WINDOW_FULLSCREEN;
 
             // 把当前窗口置在TopLevel Highest
+#ifdef Q_OS_WIN
             SetWindowPos((HWND) this->winId(), HWND_TOPMOST, this->pos().x(), this->pos().y(), this->width(), this->height(), SWP_SHOWWINDOW);
+#endif
 
             logger->info(
                 "max->fullscreen/normal->fullscreen, ui.playWidget: {}x{}, {}x{}",
@@ -1617,7 +1633,9 @@ void MainWindow::on_pushButton_fullScreen_clicked()
                     ui.widget_playControl->hide();
 
                     // 把当前窗口置在TopLevel Highest
+#ifdef Q_OS_WIN
                     SetWindowPos((HWND) this->winId(), HWND_TOPMOST, this->pos().x(), this->pos().y(), this->width(), this->height(), SWP_SHOWWINDOW);
+#endif
                 }
             });
         } break;
@@ -1655,7 +1673,9 @@ void MainWindow::on_pushButton_fullScreen_clicked()
             mWindowSizeState = WINDOW_FULLSCREEN;
 
             // 把当前窗口置在TopLevel Highest
+#ifdef Q_OS_WIN
             SetWindowPos((HWND) this->winId(), HWND_TOPMOST, this->pos().x(), this->pos().y(), this->width(), this->height(), SWP_SHOWWINDOW);
+#endif
 
             logger->info(
                 "max->fullscreen/normal->fullscreen, ui.playWidget: {}x{}, {}x{}",
@@ -1670,7 +1690,9 @@ void MainWindow::on_pushButton_fullScreen_clicked()
                     ui.widget_playControl->hide();
 
                     // 把当前窗口置在TopLevel Highest
+#ifdef Q_OS_WIN
                     SetWindowPos((HWND) this->winId(), HWND_TOPMOST, this->pos().x(), this->pos().y(), this->width(), this->height(), SWP_SHOWWINDOW);
+#endif
                 }
             });
         } break;
@@ -2690,7 +2712,9 @@ void MainWindow::on_actionSetting_triggered()
     // FIX: 若为全屏，则暂时将主窗口最上取消（以便显示SettingsDialog)
     if (mWindowSizeState == WINDOW_FULLSCREEN) {
         logger->info("WindowSizeState is FULLScreen, SetWindowPos not as TopMost");
+#ifdef Q_OS_WIN
         SetWindowPos((HWND) this->winId(), HWND_NOTOPMOST, this->pos().x(), this->pos().y(), this->width(), this->height(), SWP_SHOWWINDOW);
+#endif
     }
 
     mSettingsDialog.exec();
@@ -4199,7 +4223,7 @@ void MainWindow::onSeekLeftKey()
     if (playController_ && playController_->isOpened()) {
         // seek当前时间-5秒，seek() 参数为毫秒
         int64_t currentPosMs = playController_->getCurrentPositionMs();
-        int64_t seekPosMs = std::max(0LL, currentPosMs - 5000);
+        int64_t seekPosMs = std::max(static_cast<int64_t>(0), currentPosMs - 5000);
         playController_->seek(seekPosMs);
         logger->info("Seek left 5s, from {}ms to {}ms", currentPosMs, seekPosMs);
     }
@@ -4225,7 +4249,7 @@ void MainWindow::onSeekLeftLargeKey()
         // seek当前时间-10%，seek() 参数为毫秒
         int64_t currentPosMs = playController_->getCurrentPositionMs();
         int64_t durationMs = playController_->getDurationMs();
-        int64_t seekPosMs = std::max(0LL, currentPosMs - durationMs / 10);
+        int64_t seekPosMs = std::max(static_cast<int64_t>(0), currentPosMs - durationMs / 10);
         playController_->seek(seekPosMs);
         logger->info("Seek left 10%, from {}ms to {}ms", currentPosMs, seekPosMs);
     }

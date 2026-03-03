@@ -17,7 +17,6 @@ extern spdlog::logger *logger;
 
 OpenGLVideoWidget::OpenGLVideoWidget(QWidget *parent)
     : VideoWidgetBase(parent)
-    , QOpenGLWidget(parent)
 {
     // 设置 OpenGL 上下文
     QSurfaceFormat format;

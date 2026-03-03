@@ -13,7 +13,7 @@
 #include "../GlobalDef.h"
 #include "spdlog/spdlog.h"
 #include <QDebug>
-#include <QtLogging>
+#include <QLoggingCategory>
 
 template<size_t SizeLimit>
 class PacketQueue

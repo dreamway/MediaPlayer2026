@@ -2,6 +2,7 @@
 #include "GlobalDef.h"
 #include "PlaybackStateMachine.h"
 #include "ui_MainWindow.h"
+#include <QShortcut>
 #include <QtWidgets/QMainWindow>
 
 class PlayController;

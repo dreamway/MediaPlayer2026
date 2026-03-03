@@ -6,10 +6,15 @@
 #include <cstddef>
 #include <cstring>
 
+#ifdef Q_OS_WIN
 #include <pdh.h>
 #include <psapi.h>
 #include <windows.h>
 #pragma comment(lib, "pdh.lib")
+#else
+#include <fstream>
+#include <unistd.h>
+#endif
 
 SystemMonitor::SystemMonitor()
     : lastProcessTime_(0)
@@ -30,6 +35,7 @@ void SystemMonitor::start(PlayController *controller)
     running_.store(true);
     lastCPUCheckTime_ = std::chrono::steady_clock::now();
 
+#ifdef Q_OS_WIN
     FILETIME creationTime, exitTime, kernelTime, userTime;
     if (GetProcessTimes(GetCurrentProcess(), &creationTime, &exitTime, &kernelTime, &userTime)) {
         ULARGE_INTEGER time;
@@ -37,6 +43,17 @@ void SystemMonitor::start(PlayController *controller)
         time.HighPart = userTime.dwHighDateTime;
         lastProcessTime_ = time.QuadPart;
     }
+#else
+    // Linux: read initial CPU time from /proc/self/stat
+    std::ifstream statFile("/proc/self/stat");
+    if (statFile.is_open()) {
+        std::string ignore;
+        long utime = 0, stime = 0;
+        for (int i = 0; i < 13; ++i) statFile >> ignore;
+        statFile >> utime >> stime;
+        lastProcessTime_ = utime + stime;
+    }
+#endif
 
     monitorThread_ = std::make_unique<std::thread>(&SystemMonitor::monitorThread, this, controller);
     logger->info("SystemMonitor started");
@@ -80,22 +97,36 @@ double SystemMonitor::getCPUUsagePercent()
 
 double SystemMonitor::getGPUUsagePercent() const
 {
-    // GPU监控需要平台特定的API，暂时返回0
-    // 可以使用NVIDIA NVML、AMD ADL或Windows WMI等
     return 0.0;
 }
 
 double SystemMonitor::getProcessMemoryUsage() const
 {
+#ifdef Q_OS_WIN
     PROCESS_MEMORY_COUNTERS_EX pmc;
     if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS *) &pmc, sizeof(pmc))) {
-        return pmc.WorkingSetSize / (1024.0 * 1024.0); // 转换为MB
+        return pmc.WorkingSetSize / (1024.0 * 1024.0);
     }
     return 0.0;
+#else
+    std::ifstream statusFile("/proc/self/status");
+    if (statusFile.is_open()) {
+        std::string line;
+        while (std::getline(statusFile, line)) {
+            if (line.find("VmRSS:") == 0) {
+                long rssKB = 0;
+                sscanf(line.c_str(), "VmRSS: %ld", &rssKB);
+                return rssKB / 1024.0;
+            }
+        }
+    }
+    return 0.0;
+#endif
 }
 
 double SystemMonitor::getProcessCPUUsage()
 {
+#ifdef Q_OS_WIN
     FILETIME creationTime, exitTime, kernelTime, userTime;
     FILETIME sysIdleTime, sysKernelTime, sysUserTime;
 
@@ -111,7 +142,7 @@ double SystemMonitor::getProcessCPUUsage()
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastCPUCheckTime_).count();
 
     if (elapsed < 100) {
-        return 0.0; // 时间太短，返回0
+        return 0.0;
     }
 
     ULARGE_INTEGER currentProcessTime, lastProcessTimeUL, sysKernelTimeUL, sysUserTimeUL;
@@ -130,7 +161,6 @@ double SystemMonitor::getProcessCPUUsage()
     ULONGLONG totalSysTime = sysKernelTimeUL.QuadPart + sysUserTimeUL.QuadPart;
     ULONGLONG processTimeDelta = currentProcessTime.QuadPart - lastProcessTimeUL.QuadPart;
 
-    // 更新上次的时间和进程时间
     lastCPUCheckTime_ = now;
     lastProcessTime_ = currentProcessTime.QuadPart;
 
@@ -140,16 +170,58 @@ double SystemMonitor::getProcessCPUUsage()
     }
 
     return 0.0;
+#else
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastCPUCheckTime_).count();
+    if (elapsed < 100) return 0.0;
+
+    std::ifstream statFile("/proc/self/stat");
+    if (!statFile.is_open()) return 0.0;
+
+    std::string ignore;
+    long utime = 0, stime = 0;
+    for (int i = 0; i < 13; ++i) statFile >> ignore;
+    statFile >> utime >> stime;
+    long currentTime = utime + stime;
+
+    long ticksPerSec = sysconf(_SC_CLK_TCK);
+    double processTimeDelta = static_cast<double>(currentTime - lastProcessTime_) / ticksPerSec;
+    double elapsedSec = elapsed / 1000.0;
+
+    lastCPUCheckTime_ = now;
+    lastProcessTime_ = currentTime;
+
+    if (elapsedSec > 0) {
+        double cpuPercent = (processTimeDelta / elapsedSec) * 100.0;
+        return cpuPercent > 100.0 ? 100.0 : cpuPercent;
+    }
+    return 0.0;
+#endif
 }
 
 double SystemMonitor::getTotalSystemMemoryMB() const
 {
+#ifdef Q_OS_WIN
     MEMORYSTATUSEX memInfo;
     memInfo.dwLength = sizeof(MEMORYSTATUSEX);
     if (GlobalMemoryStatusEx(&memInfo)) {
-        return memInfo.ullTotalPhys / (1024.0 * 1024.0); // 转换为MB
+        return memInfo.ullTotalPhys / (1024.0 * 1024.0);
     }
     return 0.0;
+#else
+    std::ifstream meminfo("/proc/meminfo");
+    if (meminfo.is_open()) {
+        std::string line;
+        while (std::getline(meminfo, line)) {
+            if (line.find("MemTotal:") == 0) {
+                long totalKB = 0;
+                sscanf(line.c_str(), "MemTotal: %ld", &totalKB);
+                return totalKB / 1024.0;
+            }
+        }
+    }
+    return 0.0;
+#endif
 }
 
 void SystemMonitor::printMonitorInfo(PlayController *controller)
@@ -163,14 +235,11 @@ void SystemMonitor::printMonitorInfo(PlayController *controller)
     double totalMemMB = getTotalSystemMemoryMB();
     double memPercent = totalMemMB > 0 ? (memMB / totalMemMB) * 100.0 : 0.0;
 
-    // 获取队列状态（需要通过friend访问，或者添加公共接口）
-    // 这里先打印基本信息
     logger->info("========== System Monitor ==========");
     logger->info("Memory Usage: {:.2f} MB ({:.2f}% of system)", memMB, memPercent);
     logger->info("CPU Usage: {:.2f}%", cpuPercent);
     logger->info("GPU Usage: {:.2f}% (not implemented)", getGPUUsagePercent());
 
-    // 打印播放状态
     if (controller) {
         logger->info("Playback State: {}", static_cast<int>(controller->getPlaybackState()));
         logger->info("Is Playing: {}", controller->isPlaying());
@@ -178,29 +247,22 @@ void SystemMonitor::printMonitorInfo(PlayController *controller)
         logger->info("Is Stopped: {}", controller->isStopped());
         logger->info("Duration: {} ms", controller->getDurationMs());
 
-        // 线程健康检查
         bool threadHealthy = controller->isThreadHealthy();
         logger->info("Thread Health: {}", threadHealthy ? "OK" : "WARNING");
 
-        // 主动检测播放完成（如果线程不健康，可能是播放完成导致的）
-        // 如果isPlaying()，但线程已经不健康，可能是播放完成但没有正确停止
         if (!threadHealthy && controller->isPlaying() && !controller->isPaused()) {
-            // 尝试从MasterClock获取当前播放时间（估算）
             try {
                 auto masterClock = controller->getMasterClock();
                 int64_t currentSeconds = std::chrono::duration_cast<std::chrono::seconds>(masterClock).count();
 
-                // 如果currentSeconds是负数或异常值，使用Duration作为估算值（假设播放到最后）
                 if (currentSeconds < 0 || currentSeconds > controller->getDurationMs() / 1000 + 10) {
-                    currentSeconds = controller->getDurationMs() / 1000; // 使用总时长作为估算
+                    currentSeconds = controller->getDurationMs() / 1000;
                 }
 
-                // 检查并触发停止（如果检测到播放完成）
                 if (controller->checkAndStopIfFinished(currentSeconds)) {
                     logger->info("SystemMonitor: Detected and triggered playback finish stop");
                 }
             } catch (...) {
-                // 如果获取时钟失败，使用总时长作为估算值
                 int64_t totalSeconds = controller->getDurationMs() / 1000;
                 if (controller->checkAndStopIfFinished(totalSeconds)) {
                     logger->info("SystemMonitor: Detected and triggered playback finish stop (using duration as estimate)");
@@ -208,9 +270,6 @@ void SystemMonitor::printMonitorInfo(PlayController *controller)
             }
         }
     }
-
-    // 注意：在新架构中，队列信息需要通过PlayController获取
-    // 这里暂时只打印基本信息，避免访问已删除的Video类
 
     logger->info("===================================");
 }
