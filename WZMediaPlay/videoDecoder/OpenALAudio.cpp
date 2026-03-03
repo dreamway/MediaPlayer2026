@@ -76,10 +76,18 @@ bool Audio::open(ALenum format, ALuint frameSize, int sampleRate)
 
     // 创建 OpenAL 资源
     alGenBuffers(static_cast<ALsizei>(buffers_.size()), buffers_.data());
+    ALenum bufError = alGetError();
+    if (bufError != AL_NO_ERROR) {
+        logger->error("Audio::open: Failed to create OpenAL buffers: {}", alGetString(bufError));
+        return false;
+    }
+    
     alGenSources(1, &source_);
-
-    if (alGetError() != AL_NO_ERROR) {
-        logger->error("Audio::open: Failed to create OpenAL resources");
+    ALenum srcError = alGetError();
+    if (srcError != AL_NO_ERROR) {
+        logger->error("Audio::open: Failed to create OpenAL source: {}", alGetString(srcError));
+        alDeleteBuffers(static_cast<ALsizei>(buffers_.size()), buffers_.data());
+        buffers_.fill(0);
         return false;
     }
 
@@ -303,24 +311,21 @@ bool Audio::writeAudio(const uint8_t *samples, unsigned int length)
 
                 // 只有在 AL_PLAYING 状态下才设置 deviceStartTime_
                 // 这确保我们只在音频真正开始播放时开始计时
+                // 如果basePts还未设置，使用当前音频帧的PTS作为全局基准
+                nanoseconds currentBasePts = controller_.getBasePts();
+                if (currentBasePts == kInvalidTimestamp) {
+                    controller_.setBasePts(currentPts_);
+                }
+
                 if (state == AL_PLAYING) {
-                    // 关键：使用当前音频帧的PTS作为基准，而不是0，确保与视频基准一致
-                    // 如果basePts还未设置，使用当前音频帧的PTS作为全局基准
-                    nanoseconds currentBasePts = controller_.getBasePts();
-                    if (currentBasePts == kInvalidTimestamp) {
-                        controller_.setBasePts(currentPts_);
-                    }
                     if (deviceStartTime_ == std::chrono::steady_clock::time_point{}) {
                         deviceStartTime_ = std::chrono::steady_clock::now();
                     }
-
                     playbackStarted_ = true;
                 } else {
-                    nanoseconds currentBasePts = controller_.getBasePts();
-                    if (currentBasePts == kInvalidTimestamp) {
-                        controller_.setBasePts(currentPts_);
-                    }
-                    playbackStarted_ = true;
+                    // OpenAL 未进入 PLAYING 状态 — 不设置 playbackStarted_
+                    // 下次 writeAudio 会重新尝试 alSourcePlay
+                    logger->warn("Audio::writeAudio: alSourcePlay called but state={}, will retry", state);
                 }
             }
         } else if (playbackStarted_) {
@@ -494,24 +499,24 @@ void Audio::clear()
             }
         }
 
-        // 重置状态
+        // 重置状态（包括 br_，确保 Seek 后 writeAudio 不会提前返回）
         currentPts_ = nanoseconds{0};
         playbackStarted_ = false;
         deviceStartTime_ = {};
+        br_ = false;
     }
 }
 
 nanoseconds Audio::getClock()
 {
-    // 注意：getClockNoLock() 内部已经有适当的同步机制
-    // 不需要额外的锁保护，避免死锁风险
+    // 持锁调用，避免与 writeAudio/updateClock 的 data race
+    std::lock_guard<std::mutex> lock(srcMutex_);
     return getClockNoLock();
 }
 
 nanoseconds Audio::getClockNoLock()
 {
-    // 参考旧版本的实现：使用 currentPts_ 减去已排队的缓冲区时间，再加上当前播放位置
-    // 关键：需要对齐到 basePts_，确保与视频时钟基准一致
+    // 注意：此方法必须在持有 srcMutex_ 的情况下调用
     
     nanoseconds pts = currentPts_;
     

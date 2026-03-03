@@ -154,6 +154,11 @@ bool VideoThread::handleSeekingState(bool &wasSeekingBefore)
         if (!wasSeekingBefore) {
             wasSeekingBefore = true;
 
+            if (!dec_) {
+                SPDLOG_LOGGER_WARN(logger, "VideoThread::handleSeekingState: dec_ is null, skipping pre-decode");
+                return true;
+            }
+
             // Seeking预加载：预解码目标位置附近的多个关键帧（减少卡顿）
             AVPixelFormat dummyPixFmt = AV_PIX_FMT_NONE;
             Frame dummyFrame;

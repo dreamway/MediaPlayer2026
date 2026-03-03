@@ -1015,9 +1015,9 @@ bool PlayController::seek(int64_t positionMs)
         return false;
     }
 
-    // 2. 转换到Seeking状态（统一使用状态机管理状态）
-    if (!stateMachine_.transitionTo(PlaybackState::Seeking, "Seeking to " + std::to_string(positionMs) + " ms")) {
-        SPDLOG_LOGGER_ERROR(logger, "PlayController::seek: Failed to transition to Seeking state");
+    // 2. 使用统一的 enterSeeking()（保存 Seek 前状态，便于恢复到 Playing 或 Paused）
+    if (!stateMachine_.enterSeeking("Seeking to " + std::to_string(positionMs) + " ms")) {
+        SPDLOG_LOGGER_ERROR(logger, "PlayController::seek: Failed to enter Seeking state");
         return false;
     }
 
@@ -1035,7 +1035,7 @@ bool PlayController::seek(int64_t positionMs)
             SPDLOG_LOGGER_ERROR(logger, "PlayController::seek: failed to lock VideoThread (timeout), aborting seek");
             // 回退状态：如果之前已经转换到 Seeking，需要回退
             if (stateMachine_.isSeeking()) {
-                stateMachine_.transitionTo(PlaybackState::Playing, "Seek aborted: failed to lock VideoThread");
+                stateMachine_.exitSeeking("Seek aborted: failed to lock VideoThread");
             }
             return false;
         }
@@ -1054,7 +1054,7 @@ bool PlayController::seek(int64_t positionMs)
             }
             // 回退状态：如果之前已经转换到 Seeking，需要回退
             if (stateMachine_.isSeeking()) {
-                stateMachine_.transitionTo(PlaybackState::Playing, "Seek aborted: failed to lock AudioThread");
+                stateMachine_.exitSeeking("Seek aborted: failed to lock AudioThread");
             }
             return false;
         }
@@ -1072,7 +1072,7 @@ bool PlayController::seek(int64_t positionMs)
         }
         // 回退状态：如果之前已经转换到 Seeking，需要回退
         if (stateMachine_.isSeeking()) {
-            stateMachine_.transitionTo(PlaybackState::Playing, "Seek aborted: deadlock detected");
+            stateMachine_.exitSeeking("Seek aborted: deadlock detected");
         }
         return false;
     }
@@ -1409,9 +1409,9 @@ void PlayController::onDemuxerThreadSeekFinished(int64_t positionUs)
     if (positionUs < 0) {
         SPDLOG_LOGGER_ERROR(logger, "PlayController::onDemuxerThreadSeekFinished: Seek failed (positionUs: {})", positionUs);
 
-        // 转换到Error状态（seeking失败）
+        // Seek 失败，恢复到 Seek 前的状态
         if (stateMachine_.isSeeking()) {
-            stateMachine_.transitionTo(PlaybackState::Playing, "Seek failed: positionUs < 0");
+            stateMachine_.exitSeeking("Seek failed: positionUs < 0");
         }
 
         // 发送失败信号（使用 -1 表示失败）
@@ -1442,8 +1442,8 @@ void PlayController::onDemuxerThreadSeekFinished(int64_t positionUs)
         return;
     }
 
-    // 转换回Playing状态（seeking完成）
-    stateMachine_.transitionTo(PlaybackState::Playing, "Seek completed successfully");
+    // Seek 完成，恢复到 Seek 前的状态（Playing 或 Paused）
+    stateMachine_.exitSeeking("Seek completed successfully");
 
     // 验证状态确实已转换
     bool isSeekingAfter = stateMachine_.isSeeking();

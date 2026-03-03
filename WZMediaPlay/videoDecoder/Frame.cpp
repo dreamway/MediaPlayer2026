@@ -187,7 +187,7 @@ bool Frame::isTsValid() const
 nanoseconds Frame::ts() const
 {
     if (!m_frame || !isTsValid()) {
-        return nanoseconds::min();
+        return kInvalidTimestamp;
     }
     
     // 使用 best_effort_timestamp 或 pts
@@ -196,7 +196,7 @@ nanoseconds Frame::ts() const
         : m_frame->pts;
     
     if (tsValue == AV_NOPTS_VALUE) {
-        return nanoseconds::min();
+        return kInvalidTimestamp;
     }
     
     // 转换为 nanoseconds
@@ -220,7 +220,7 @@ void Frame::setTS(nanoseconds ts)
         return;
     }
     
-    if (ts == nanoseconds::min()) {
+    if (ts == kInvalidTimestamp) {
         m_frame->pts = AV_NOPTS_VALUE;
         m_frame->best_effort_timestamp = AV_NOPTS_VALUE;
         return;

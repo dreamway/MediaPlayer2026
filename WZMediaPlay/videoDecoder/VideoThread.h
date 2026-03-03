@@ -108,7 +108,7 @@ private:
 
     // 基于视频 FPS 的渲染控制
     std::chrono::steady_clock::time_point lastRenderTime_;  // 上次渲染时间
-    nanoseconds lastFramePts_{nanoseconds::min()};         // 上次渲染帧的 PTS
+    nanoseconds lastFramePts_{kInvalidTimestamp};         // 上次渲染帧的 PTS
     nanoseconds targetFrameInterval_{16666666};             // 动态计算的目标帧间隔（基于视频 FPS）
     double videoFrameRate_{25.0};                           // 视频帧率，从Demuxer获取
 
