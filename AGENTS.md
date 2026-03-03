@@ -200,15 +200,20 @@ cd build && ./WZMediaPlayer
 
 ### Running the application in Cloud VM
 - The Cloud VM has no GPU, so OpenGL rendering shows a black viewport. The application launches, initializes, and responds to input — only the video rendering area is black.
-- Launch: `cd /workspace/build && ./WZMediaPlayer`
-- Test video: `testing/video/test.mp4` (56MB)
+- Launch with required env vars for the window to be visible: `cd /workspace/build && QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 ALSOFT_DRIVERS=null ./WZMediaPlayer`
+  - `LIBGL_ALWAYS_SOFTWARE=1` enables Mesa software rendering (needed for the Qt window to appear on screen).
+  - `ALSOFT_DRIVERS=null` prevents OpenAL from crashing when no audio device is available.
+- Generate a test video: `ffmpeg -f lavfi -i testsrc=duration=10:size=640x480:rate=25 -f lavfi -i sine=frequency=440:duration=10 -c:v libx264 -c:a aac -shortest /workspace/testing/video/test.mp4`
+- The `build/` directory is pre-configured with CMake/Ninja. To rebuild: `cd /workspace/build && ninja`
 
 ### Lint and format
 - **Check format:** `find WZMediaPlay -name "*.cpp" -o -name "*.h" | grep -v 3rdparty | xargs clang-format --dry-run --Werror`
 - **Apply format:** `find WZMediaPlay -name "*.cpp" -o -name "*.h" | grep -v 3rdparty | xargs clang-format -i`
 
 ### Known issues
-- `PlaybackStateMachineTest.cpp` line 32 has a pre-existing test logic bug: expects `Playing -> Seeking` to fail, but state machine correctly allows it.
+- `PlaybackStateMachineTest` has a pre-existing assertion failure at line 32 (`Ready -> Seeking` transition test); `ErrorRecoveryManagerTest` passes.
 - OpenGL video rendering requires a real GPU; Cloud VM renders black viewport due to software GL.
-- pywinauto test suite (`testing/pywinauto/`) is Windows-specific (uses `pywinauto` + `pywin32`); cannot run on Linux as-is.
+- pywinauto test suite (`testing/pywinauto/`) is Windows-specific (uses `pywinauto` + `pywin32`); cannot run on Linux as-is. A Python venv exists at `/workspace/testing/venv/`.
 - The `WZMediaPlay.sln` solution file is missing from the repo (Windows-only build artifact).
+- Without `LIBGL_ALWAYS_SOFTWARE=1`, the Qt window may not appear in xdotool/xwininfo searches due to RHI rendering bypass.
+- System Qt version is 6.4.2 (Ubuntu 24.04 packages), while the project targets Qt 6.6.3; no issues observed with the older version for compilation and startup.
