@@ -242,13 +242,13 @@ private:
 
     // 全局基准 PTS（用于音视频同步）
     // 在播放开始时设置，确保 VideoThread 和 AudioThread 使用相同的基准
-    nanoseconds basePts_{nanoseconds::min()};
-    nanoseconds videoBasePts_{nanoseconds::min()};
+    nanoseconds basePts_{kInvalidTimestamp};
+    nanoseconds videoBasePts_{kInvalidTimestamp};
     mutable std::mutex basePtsMutex_; // 保护 basePts_ 的互斥锁（mutable 允许在 const 方法中使用）
 
     // TODO: 旧的视频时钟管理（保留用于兼容，AVClock完全集成后可删除）
     // 视频时钟基于最后渲染的帧的 PTS + 从渲染时间到现在的经过时间
-    nanoseconds videoClock_{nanoseconds::min()};
+    nanoseconds videoClock_{kInvalidTimestamp};
     std::chrono::steady_clock::time_point videoClockTime_{};  // 最后更新视频时钟的时间
     mutable std::mutex videoClockMutex_; // 保护 videoClock_ 的互斥锁（mutable 允许在 const 方法中使用）
     bool flushVideo_{false};             // 是否需要刷新视频解码器

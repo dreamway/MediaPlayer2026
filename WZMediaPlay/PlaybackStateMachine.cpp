@@ -149,6 +149,32 @@ const char* PlaybackStateMachine::stateName(PlaybackState state) {
     }
 }
 
+bool PlaybackStateMachine::enterSeeking(const std::string& reason)
+{
+    PlaybackState current = getState();
+    if (current != PlaybackState::Playing && current != PlaybackState::Paused) {
+        if (logger) {
+            logger->warn("PlaybackStateMachine::enterSeeking: Cannot seek from state {} (reason: {})",
+                        stateName(current), reason);
+        }
+        return false;
+    }
+    preSeekState_.store(current, std::memory_order_release);
+    return transitionTo(PlaybackState::Seeking, reason.empty() ? "enterSeeking" : reason);
+}
+
+bool PlaybackStateMachine::exitSeeking(const std::string& reason)
+{
+    if (!isSeeking()) {
+        return false;
+    }
+    PlaybackState target = preSeekState_.load(std::memory_order_acquire);
+    if (target != PlaybackState::Playing && target != PlaybackState::Paused) {
+        target = PlaybackState::Playing;
+    }
+    return transitionTo(target, reason.empty() ? "exitSeeking" : reason);
+}
+
 void PlaybackStateMachine::setStateChangeCallback(
     std::function<void(PlaybackState, PlaybackState, const std::string&)> callback) {
     stateChangeCallback_ = callback;

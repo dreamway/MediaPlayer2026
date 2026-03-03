@@ -273,7 +273,7 @@ bool AudioThread::decodeAndWriteAudio(int buffer_len)
     // 原因：AudioThread的seek位置判断与VideoThread不同步，导致音频被阻止播放
     double videoSeekPos = controller_->getVideoSeekPos();
     if (videoSeekPos > 0.0) {
-        if (currentPts_ != nanoseconds::min()) {
+        if (currentPts_ != kInvalidTimestamp) {
             double audioPtsSeconds = currentPts_.count() / 1e9;
             if (audioPtsSeconds < videoSeekPos) {
                 av_free(samples);
@@ -429,7 +429,7 @@ void AudioThread::run()
         wasSeeking_ = false;
         audioFinished_.store(false);
         currentPts_ = nanoseconds{0};
-        deviceStartTime_ = nanoseconds::min();
+        deviceStartTime_ = kInvalidTimestamp;
 
         if (!audio_) {
             logger->error("AudioThread::run: Audio is null");
@@ -559,7 +559,7 @@ bool AudioThread::initializeDecoder()
     }
 
     currentPts_ = nanoseconds{0};
-    deviceStartTime_ = nanoseconds::min();
+    deviceStartTime_ = kInvalidTimestamp;
     audioFinished_.store(false, std::memory_order_release);
     samples_ = nullptr;
     samplesMax_ = 0;

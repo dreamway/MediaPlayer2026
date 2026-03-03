@@ -5,6 +5,7 @@
 #include "ffmpeg.h"
 #include "GlobalDef.h"
 #include "chronons.h"
+#include "../ErrorRecoveryManager.h"
 
 #include <QThread>
 #include <QObject>
@@ -99,4 +100,7 @@ private:
     
     // 线程健康检查
     std::chrono::steady_clock::time_point lastDemuxTime_;
+    
+    // 错误恢复管理器
+    ErrorRecoveryManager errorRecoveryManager_;
 };
