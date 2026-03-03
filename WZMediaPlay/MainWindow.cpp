@@ -927,7 +927,7 @@ void MainWindow::initUI()
 
 void MainWindow::registerSysNotification()
 {
-#ifdef Q_OS_WINDOWS
+#ifdef Q_OS_WIN
     // 注册指定窗口以接收会话更改通知，获取锁屏，解锁，登录，注销等消息
     bool ret = WTSRegisterSessionNotification((HWND) this->winId(), NOTIFY_FOR_THIS_SESSION);
     qDebug() << "会话事件通知注册" << (ret ? "成功" : "失败");

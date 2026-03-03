@@ -5,7 +5,7 @@
 #include <QStandardPaths>
 #include <QCoreApplication>
 
-#ifdef WIN32
+#ifdef Q_OS_WIN
 
 QString CrashHandler::dumpDirectory_;
 bool CrashHandler::initialized_ = false;
@@ -156,10 +156,8 @@ QString CrashHandler::getDumpFilePath()
     return QDir(dumpDirectory_).filePath(fileName);
 }
 
-#endif // WIN32
+#else
 
-#ifndef WIN32
-// Linux/macOS: signal-based crash handler
 #include <csignal>
 #include <cstdlib>
 #include <execinfo.h>
@@ -228,4 +226,4 @@ void CrashHandler::signalHandler(int sig)
     signal(sig, SIG_DFL);
     raise(sig);
 }
-#endif // !WIN32
+#endif
