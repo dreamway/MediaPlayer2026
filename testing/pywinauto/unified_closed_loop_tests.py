@@ -970,25 +970,39 @@ def main():
     
     args = parser.parse_args()
 
-    # 默认路径：根据脚本位置自动推断，支持 main 工作区和 worktree
+    # 默认路径：优先 config.ini / config.py，否则按脚本位置推断
     def _find_default_exe():
+        try:
+            import config as test_config
+            p = getattr(test_config, "PLAYER_EXE_PATH", None)
+            if p and os.path.exists(p):
+                return p
+        except ImportError:
+            pass
         script_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(os.path.dirname(script_dir))
         candidates = [
-            os.path.join(project_root, "x64", "Debug", "WZMediaPlay.exe"),  # 当前根下的 x64/Debug
-            os.path.join(project_root, "WZMediaPlay", "x64", "Debug", "WZMediaPlay.exe"),  # worktree 构建
+            os.path.join(project_root, "build", "Release", "WZMediaPlayer.exe"),
+            os.path.join(project_root, "x64", "Debug", "WZMediaPlay.exe"),
+            os.path.join(project_root, "WZMediaPlay", "x64", "Debug", "WZMediaPlay.exe"),
         ]
-        # worktree 中：主仓库 exe 通常 DLL 部署完整，优先尝试
         if ".worktrees" in os.path.normpath(project_root):
             main_repo = os.path.dirname(os.path.dirname(project_root))
-            candidates.insert(0, os.path.join(main_repo, "x64", "Debug", "WZMediaPlay.exe"))
+            candidates.insert(0, os.path.join(main_repo, "build", "Release", "WZMediaPlayer.exe"))
         for p in candidates:
             if os.path.exists(p):
                 return p
         return candidates[0]
 
+    def _default_video_path():
+        try:
+            import config as test_config
+            return getattr(test_config, "TEST_VIDEO_PATH", None) or r"D:\2026Github\testing\video\test.mp4"
+        except ImportError:
+            return r"D:\2026Github\testing\video\test.mp4"
+
     exe_path = args.exe_path or _find_default_exe()
-    video_path = args.video_path or r"D:\BaiduNetdiskDownload\test.mp4"
+    video_path = args.video_path or _default_video_path()
     video_3d_path = args.video_3d_path
     
     # 检查路径

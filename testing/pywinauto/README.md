@@ -47,6 +47,17 @@ pip install pywinauto Pillow
 pip install -r requirements.txt
 ```
 
+## 路径配置
+
+**所有脚本的 EXE 与测试视频路径统一由 `config.ini` 管理**，无需改代码：
+
+- 编辑同目录下的 **`config.ini`**，修改 `[paths]` 中的：
+  - `exe_path`：播放器可执行文件路径（如 `D:\2026Github\build\Release\WZMediaPlayer.exe`）
+  - `test_video_path`：默认测试视频路径
+  - `test_3d_video_path`：3D 测试视频（留空则使用 `test_video_path`）
+- `config.py` 会优先从 `config.ini` 读取上述项，未配置时使用内置默认值。
+- 命令行仍可通过 `--exe-path` / `--video-path` 等覆盖（部分脚本支持）。
+
 ## 快速开始
 
 ### 1. 运行完整测试套件

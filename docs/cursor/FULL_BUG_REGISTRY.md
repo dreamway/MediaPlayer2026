@@ -97,3 +97,90 @@ docs/ 下的 63 个文档与本登记表的对应关系：
 - **全局优化**: 架构分析与稳定性改进方案.md, 全局优化与稳定性改进方案.md, 全局优化完成总结.md, 全局优化实施总结.md
 - **测试/计划**: plans/ 目录下全部 7 个文档, TDD/Catch2.md, 单元测试与集成测试计划.md
 - **其他**: arch/Demuxer_vs_Timer.md, rendering_architecture_usage.md, SHORTCUTCHANGES.md, REFACTORING_PROGRESS_PHASE1/2.md, 继续工作Prompt.md
+
+
+## TestRound 1: 2026/03/03 21:34
+
+---
+
+## 🆕 新发现 Bug (2026-03-03 手动测试)
+
+### 🔴 BUG-018: 视频切换时线程阻塞导致崩溃
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 切换视频时程序崩溃，关闭上一个视频的解码线程时无限等待，最终强制关闭时崩溃 |
+| **根因分析** | 线程同步问题：VideoThread/AudioThread 在 stop() 时等待消费者线程退出，但消费者线程可能阻塞在条件变量等待上，导致死锁 |
+| **相关组件** | ThreadSyncManager, VideoThread, AudioThread, DemuxerThread |
+| **优先级** | P0 - 致命 |
+| **状态** | ⚠️ 未修复 |
+| **建议方案** | 1. 使用 ThreadSyncManager 统一管理线程生命周期 2. 添加超时机制避免无限等待 3. 确保 stop() 时先 signal 再 wait |
+
+### 🔴 BUG-019: 切换视频后进度条位置未重置
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 手动切换打开新视频后，进度条位置未从头开始，仍停留在上一个视频播放位置附近 |
+| **根因分析** | PlayController::openPath() 或 MainWindow 未正确重置进度条 slider 位置 |
+| **相关组件** | MainWindow, PlayController, CustomSlider |
+| **优先级** | P1 - 高 |
+| **状态** | ⚠️ 未修复 |
+| **建议方案** | 在 openPath() 成功后调用 slider->setValue(0) 并更新 duration 显示 |
+
+### 🔴 BUG-020: 播放结束时画面未清理且UI状态异常
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 播放结束时：1) 视频画面未清空为黑屏/Logo，残留旧帧图像 2) 播放控件未切换至"播放完成"状态 3) 进度条未重置 |
+| **根因分析** | handlePlaybackFinished() 未正确清理 VideoWidget 显示，未重置 UI 控件状态 |
+| **相关组件** | MainWindow::handlePlaybackFinished(), VideoWidget, StereoVideoWidget |
+| **优先级** | P1 - 高 |
+| **状态** | ⚠️ 未修复 |
+| **建议方案** | 1. 播放结束时调用 videoWidget->clearFrame() 2. 重置 playButton 图标状态 3. 重置 slider 到 0 位置 |
+
+### 🔴 BUG-021: 进度条快速Seek时画面/声音不同步
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 进度条快速拖动时两种异常：1) 声音跟上新位置但画面仍显示旧帧 2) 声音和画面都未切换到新位置 |
+| **根因分析** | Seeking 时 flush 不彻底，或 seek 完成后未正确触发首帧解码和显示更新 |
+| **相关组件** | PlayController::seek(), DemuxerThread::seek(), VideoThread, AudioThread |
+| **优先级** | P1 - 高 |
+| **状态** | ⚠️ 未修复 |
+| **建议方案** | 1. seek() 后强制刷新首帧 2. 确保 flush 后 decoder 状态正确重置 3. 添加 seek 完成回调通知 UI 更新 |
+
+---
+
+## 自动化测试结果
+
+### 测试环境与路径（2026-03-03 更新）
+
+| 项目 | 值 |
+|------|-----|
+| **EXE 路径** | `D:\2026Github\build\Release\WZMediaPlayer.exe`（CMake 构建产物） |
+| **测试入口** | `testing/pywinauto/run_all_tests.py` |
+| **测试视频** | `D:\2026Github\testing\video\test.mp4`（若不存在需先准备或修改脚本中的路径） |
+
+以下脚本中的 EXE 路径已统一为上述路径：`run_all_tests.py`、`main.py`、`config.py`、`run_closed_loop_tests.py`、`unified_closed_loop_tests.py`、`test_av_sync.py`、`test_audio.py`、`test_progress_seek.py`、`test_3d_features.py`、`test_edge_cases.py`、`test_hardware_decoding.py`、`test_qt6_direct.py`、`ui_inspector.py`、`debug_ui.py`、`tests/closed_loop_tests.py`。
+
+### 自动化测试发现的 BUG（测试框架/环境）
+
+#### TEST-001: Windows 控制台 GBK 下 Unicode 符号导致测试中断
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 运行 `run_all_tests.py` 时，各阶段在打印结果时抛出 `UnicodeEncodeError: 'gbk' codec can't encode character '\u2713' in position ...`，导致 7 个阶段均未完成实际用例，总计 0 通过/0 失败 |
+| **根因** | 测试脚本中使用了 Unicode 符号 `✓`(U+2713)、`✗`(U+2717)，在 Windows 默认 GBK 控制台下无法编码 |
+| **修复** | 已将 `main.py`、`run_all_tests.py` 中的 `✓`/`✗` 替换为 ASCII `[PASS]`/`[FAIL]`、`[OK]` |
+| **状态** | 已修复（脚本已更新，需重新运行完整套件验证） |
+
+#### 关键日志路径说明
+
+- **LogMonitor 当前逻辑**：由 `exe_path` 推导日志目录：`dirname(exe)/../../WZMediaPlay/logs` 或 `dirname(exe)/../logs`。即 EXE 为 `build/Release/WZMediaPlayer.exe` 时，会查找 `D:\2026Github\WZMediaPlay\logs` 或 `D:\2026Github\build\logs`。
+- 若 CMake 构建将日志写到 `build/Release/logs/` 等位置，需在 `main.py` 的 `_setup_log_monitor()` 中增加对应候选路径，否则会提示「未找到日志文件」。
+
+### TestRound 1 首次运行摘要（2026-03-03）
+
+- **运行命令**：`python run_all_tests.py`（EXE：`D:\2026Github\build\Release\WZMediaPlayer.exe`）
+- **结果**：因 TEST-001 未修复前即运行，各阶段在打印时异常退出，**未执行到实际播放/Seek 等用例**；汇总为 总计: 0 | 通过: 0 | 失败: 0；耗时约 110 秒（多阶段启动/异常/退出）。
+- **后续**：修复 TEST-001 后，请在本机再次执行 `cd testing/pywinauto && python run_all_tests.py`，将生成的报告与失败用例补充到本节；若发现新的播放器 BUG（如 BUG-018～021 的复现或新问题），请追加到上方「新发现 Bug」表格并注明由自动化测试发现。

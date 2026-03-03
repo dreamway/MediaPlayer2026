@@ -404,9 +404,9 @@ class WZMediaPlayerFullTestSuite:
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(report)
             
-            print(f"\n✓ 完整测试报告已保存: {report_path}")
+            print(f"\n[OK] 完整测试报告已保存: {report_path}")
         except Exception as e:
-            print(f"\n✗ 保存测试报告失败: {e}")
+            print(f"\n[FAIL] 保存测试报告失败: {e}")
 
     def run_all(self) -> int:
         """运行所有测试"""
@@ -454,12 +454,17 @@ class WZMediaPlayerFullTestSuite:
 
 
 def main():
-    """主函数"""
-    # 配置路径（根据实际情况修改）
-    exe_path = r"E:\WZMediaPlayer_2025\x64\Debug\WZMediaPlay.exe"
-    test_video_path = r"D:\BaiduNetdiskDownload\test.mp4"
-    test_3d_video_path = r"D:\BaiduNetdiskDownload\3D片源\test_3d.mp4"
-    
+    """主函数（路径从 config.ini / config.py 读取）"""
+    try:
+        import config as test_config
+        exe_path = test_config.PLAYER_EXE_PATH
+        test_video_path = test_config.TEST_VIDEO_PATH
+        test_3d_video_path = getattr(test_config, "TEST_3D_VIDEO_PATH", None) or test_video_path
+    except ImportError:
+        exe_path = r"D:\2026Github\build\Release\WZMediaPlayer.exe"
+        test_video_path = r"D:\2026Github\testing\video\test.mp4"
+        test_3d_video_path = test_video_path
+
     suite = WZMediaPlayerFullTestSuite(exe_path, test_video_path, test_3d_video_path)
     
     try:

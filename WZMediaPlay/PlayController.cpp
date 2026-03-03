@@ -837,12 +837,10 @@ void PlayController::stopThread(QThread *thread, const char *threadName, int tim
 
     SPDLOG_LOGGER_DEBUG(logger, "PlayController::stopThread: Stopping {}", threadName);
 
-    // 根据线程类型调用相应的停止方法
     if (strcmp(threadName, "AudioThread") == 0) {
         AudioThread *audioThread = dynamic_cast<AudioThread *>(thread);
         if (audioThread) {
             audioThread->requestStop();
-            // 通知音频队列线程可以退出等待
             aPackets_.setFinished();
         } else {
             SPDLOG_LOGGER_ERROR(logger, "PlayController::stopThread: Failed to cast to AudioThread");
@@ -852,18 +850,21 @@ void PlayController::stopThread(QThread *thread, const char *threadName, int tim
         VideoThread *videoThread = dynamic_cast<VideoThread *>(thread);
         if (videoThread) {
             videoThread->requestStop();
-            // 通知视频队列线程可以退出等待
             vPackets_.setFinished();
         } else {
             SPDLOG_LOGGER_ERROR(logger, "PlayController::stopThread: Failed to cast to VideoThread");
             thread->terminate();
         }
     } else if (strcmp(threadName, "DemuxerThread") == 0) {
-        // DemuxerThread 没有 requestStop 方法，直接终止
-        thread->terminate();
-        // 通知所有队列线程可以退出等待
-        vPackets_.setFinished();
-        aPackets_.setFinished();
+        DemuxerThread *demuxThread = dynamic_cast<DemuxerThread *>(thread);
+        if (demuxThread) {
+            demuxThread->requestStop();
+            vPackets_.setFinished();
+            aPackets_.setFinished();
+        } else {
+            SPDLOG_LOGGER_ERROR(logger, "PlayController::stopThread: Failed to cast to DemuxerThread");
+            thread->terminate();
+        }
     } else {
         SPDLOG_LOGGER_WARN(logger, "PlayController::stopThread: Unknown thread type {}, terminating", threadName);
         thread->terminate();

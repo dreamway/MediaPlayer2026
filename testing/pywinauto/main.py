@@ -128,14 +128,14 @@ class WZMediaPlayerTester:
         
         # 启动监控（从文件末尾开始，只监控新内容）
         self.log_monitor.start_monitoring(self.log_file_path)
-        print(f"[LogMonitor] ✓ 实时日志监控已启动: {os.path.basename(self.log_file_path)}")
+        print(f"[LogMonitor] [OK] 实时日志监控已启动: {os.path.basename(self.log_file_path)}")
         print(f"[LogMonitor]   监控模式: 实时读取exe日志输出，检测错误和警告")
 
     def stop_log_monitoring(self):
         """停止日志监控"""
         if self.log_monitor:
             self.log_monitor.stop_monitoring()
-            print("[LogMonitor] ✓ 日志监控已停止")
+            print("[LogMonitor] [OK] 日志监控已停止")
 
     def check_log_errors(self, context: str = "", wait_for_log: float = 0.5) -> List[Dict]:
         """
@@ -240,7 +240,7 @@ class WZMediaPlayerTester:
         }
         self.test_results.append(result)
 
-        symbol = "✓ PASS" if passed else "✗ FAIL"
+        symbol = "[PASS]" if passed else "[FAIL]"
         print(f"  [{symbol}] {name}")
         if details:
             # 分行显示details，每行缩进
@@ -512,9 +512,9 @@ class WZMediaPlayerTester:
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(report)
 
-            print(f"\n✓ 测试报告已保存: {report_path}")
+            print(f"\n[OK] 测试报告已保存: {report_path}")
         except Exception as e:
-            print(f"\n✗ 保存测试报告失败: {e}")
+            print(f"\n[FAIL] 保存测试报告失败: {e}")
 
     def stop_player(self):
         """停止播放器"""
@@ -538,8 +538,13 @@ def main():
     print()
 
     # 配置路径（根据实际情况修改）
-    exe_path = r"E:\WZMediaPlayer_2025\x64\Debug\WZMediaPlay.exe"
-    test_video_path = r"D:\BaiduNetdiskDownload\test.mp4"
+    try:
+        import config as test_config
+        exe_path = test_config.PLAYER_EXE_PATH
+        test_video_path = test_config.TEST_VIDEO_PATH
+    except ImportError:
+        exe_path = r"D:\2026Github\build\Release\WZMediaPlayer.exe"
+        test_video_path = r"D:\2026Github\testing\video\test.mp4"
 
     # 创建测试器
     tester = WZMediaPlayerTester(exe_path, test_video_path)

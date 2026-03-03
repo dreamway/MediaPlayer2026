@@ -82,9 +82,13 @@ def inspect_ui(exe_path: str):
 
 
 def main():
-    """主函数"""
-    # 修改此路径为实际的播放器路径
-    exe_path = r"E:\WZMediaPlayer_2025\x64\Debug\WZMediaPlay.exe"
+    """主函数（默认路径从 config.ini / config.py 读取，也可命令行传入）"""
+    try:
+        import config as test_config
+        _default_exe = test_config.PLAYER_EXE_PATH
+    except ImportError:
+        _default_exe = r"D:\2026Github\build\Release\WZMediaPlayer.exe"
+    exe_path = _default_exe
 
     if not len(sys.argv) > 1:
         print(f"使用方法: {sys.argv[0]} [播放器路径]")
