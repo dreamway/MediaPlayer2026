@@ -15,8 +15,9 @@ class VideoThread;
 class AudioThread;
 class DemuxerThread;
 class Decoder;
-class VideoRenderer; // 新的渲染器接口
-class VideoWidgetBase; // 新的视频窗口基类
+class VideoRenderer;
+class VideoWidgetBase;
+class SystemMonitor;
 class QWidget;
 namespace videoDecoder { class Statistics; }
 
@@ -275,4 +276,7 @@ private:
 
     // 统计信息
     std::shared_ptr<videoDecoder::Statistics> statistics_;
+
+    // 系统监控（可选，仅在调试/日志模式下启用）
+    std::unique_ptr<SystemMonitor> systemMonitor_;
 };

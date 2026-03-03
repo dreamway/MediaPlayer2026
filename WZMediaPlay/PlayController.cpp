@@ -1,6 +1,7 @@
 #include "PlayController.h"
 #include "GlobalDef.h"
 #include "PlaybackStateMachine.h"
+#include "SystemMonitor.h"
 #include "videoDecoder/AudioThread.h"
 #include "videoDecoder/Decoder.h"
 #include "videoDecoder/DemuxerThread.h"
@@ -363,6 +364,14 @@ bool PlayController::open(const QString &filename)
     lastAudioFrameTime_ = std::chrono::steady_clock::now();
     lastDemuxTime_ = std::chrono::steady_clock::now();
 
+    // 启动系统监控（仅在 LOG_LEVEL <= DEBUG 时启用，避免性能影响）
+    if (GlobalDef::getInstance()->LOG_LEVEL <= 1) {
+        if (!systemMonitor_) {
+            systemMonitor_ = std::make_unique<SystemMonitor>();
+        }
+        systemMonitor_->start(this);
+    }
+
     // 注意：音频播放将在 AudioThread::initializeDecoder() 中启动
     // 因为 audio_->open() 需要在 AudioThread 中调用，此时 source_ 才会被创建
 
@@ -701,6 +710,11 @@ void PlayController::stop()
     // 停止 AVClock
     if (masterClock_) {
         masterClock_->reset();
+    }
+
+    // 0. 停止系统监控
+    if (systemMonitor_) {
+        systemMonitor_->stop();
     }
 
     // 1. 转换到Stopping状态

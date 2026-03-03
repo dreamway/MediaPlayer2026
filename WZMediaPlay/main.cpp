@@ -19,10 +19,8 @@
 
 int main(int argc, char *argv[])
 {
-    // 初始化崩溃处理器（必须在QApplication之前）
-    #ifdef WIN32
+    // 初始化崩溃处理器（必须在QApplication之前，跨平台支持）
     CrashHandler::initialize();
-    #endif
     
     QApplication a(argc, argv);
     MainWindow w;

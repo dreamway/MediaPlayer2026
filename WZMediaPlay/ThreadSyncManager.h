@@ -37,6 +37,29 @@ public:
     int getLockCount() const { return lockCount_.load(); }
     int getDeadlockCount() const { return deadlockCount_.load(); }
 
+    // RAII ScopedLock — 简化 ThreadSyncManager 的使用
+    // 用法：auto lock = tsm.scopedLock(mutex, timeout);
+    //       if (lock) { ... 已持锁 ... }
+    class ScopedLock {
+    public:
+        ScopedLock(ThreadSyncManager &tsm, std::mutex &mtx, bool acquired)
+            : tsm_(tsm), mtx_(mtx), acquired_(acquired) {}
+        ~ScopedLock() { if (acquired_) tsm_.unlock(mtx_); }
+        ScopedLock(const ScopedLock &) = delete;
+        ScopedLock &operator=(const ScopedLock &) = delete;
+        explicit operator bool() const { return acquired_; }
+    private:
+        ThreadSyncManager &tsm_;
+        std::mutex &mtx_;
+        bool acquired_;
+    };
+
+    ScopedLock scopedLock(std::mutex &mutex, std::chrono::milliseconds timeout = std::chrono::milliseconds(1000))
+    {
+        bool acquired = tryLock(mutex, timeout);
+        return ScopedLock(*this, mutex, acquired);
+    }
+
 private:
     // 锁计数
     std::atomic<int> lockCount_{0};
