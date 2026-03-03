@@ -52,6 +52,11 @@ int Audio::initAL()
 
 bool Audio::open(ALenum format, ALuint frameSize, int sampleRate)
 {
+    // 先释放已有资源，避免泄漏（重复打开视频时）
+    if (source_ != 0) {
+        close();
+    }
+
     std::lock_guard<std::mutex> lock(srcMutex_);
 
     format_ = format;

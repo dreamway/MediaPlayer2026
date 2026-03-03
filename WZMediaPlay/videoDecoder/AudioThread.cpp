@@ -716,9 +716,9 @@ void AudioThread::cleanupDecoder()
     samplesMax_ = 0;
     samplesPos_ = 0;
     samplesLen_ = 0;
-    decodedFrame_.release();
-    swrctx_.release();
-    codecctx_.release();
+    decodedFrame_.reset();
+    swrctx_.reset();
+    codecctx_.reset();
     stream_ = nullptr;
 }
 

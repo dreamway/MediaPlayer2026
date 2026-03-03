@@ -1590,6 +1590,11 @@ nanoseconds PlayController::getMasterClock() const
 
 void PlayController::updateVideoClock(nanoseconds pts)
 {
+    // 防止 nanoseconds::min() 哨兵值导致后续算术溢出
+    if (pts == nanoseconds::min()) {
+        pts = nanoseconds(0);
+    }
+
     // 更新视频时钟（由 VideoThread 在渲染帧时调用）
     // 同时更新 AVClock 和旧的视频时钟（用于 fallback）
 
@@ -1618,6 +1623,12 @@ nanoseconds PlayController::getVideoClock() const
         return videoClock_; // 返回当前值，即使未获取锁
     } else {
         nanoseconds result = videoClock_;
+
+        // 防止对 nanoseconds::min() 做算术运算（溢出风险）
+        if (result == nanoseconds::min()) {
+            const_cast<ThreadSyncManager &>(threadSyncManager_).unlock(const_cast<std::mutex &>(videoClockMutex_));
+            return nanoseconds::min();
+        }
 
         // 如果 videoClockTime_ 已设置，计算实时时钟
         if (videoClockTime_ != std::chrono::steady_clock::time_point{}) {

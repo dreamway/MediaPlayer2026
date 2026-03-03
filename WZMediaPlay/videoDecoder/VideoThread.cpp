@@ -229,6 +229,7 @@ bool VideoThread::handleSeekingState(bool &wasSeekingBefore)
     if (wasSeekingBefore && !isSeeking) {
         wasSeekingBefore = false;
         wasSeekingRecently_ = true;
+        videoBasePtsSet = false;  // 重置视频基准 PTS，让 Seek 后第一帧重新建立基准
         seekingStartTime_ = std::chrono::steady_clock::now(); // 记录seeking开始时间，用于超时保护
         eofAfterSeekCount_ = 0;
 
@@ -889,9 +890,8 @@ void VideoThread::run()
         }
     }
 
-    // 用于跟踪 seeking 状态变化的静态变量（在循环外定义，在循环开始时重置）
-    static bool wasSeekingBefore = false;
-    wasSeekingBefore = false; // 每次线程启动时重置
+    // 用于跟踪 seeking 状态变化（每次线程启动时重置）
+    bool wasSeekingBefore = false;
 
     try {
         int loopCount = 0;
