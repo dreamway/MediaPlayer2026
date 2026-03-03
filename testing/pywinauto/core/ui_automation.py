@@ -1,61 +1,61 @@
 """
-UI自动化控制器 - 基于pywinauto的UIA后端实现精确的控件操作
+UI自动化控制器 - 跨平台实现
+Windows: 基于pywinauto的UIA后端
+Linux: 基于subprocess + xdotool
 """
 
 import sys
 import time
 import os
+import subprocess
+import signal
 from typing import Optional, Dict, List, Callable, Any
 from datetime import datetime
 
-try:
-    from pywinauto.application import Application
-    from pywinauto.keyboard import send_keys
-    from pywinauto.timings import TimeoutError as PywinautoTimeoutError
-except ImportError:
-    raise ImportError("pywinauto未安装，请运行: pip install pywinauto")
+_IS_LINUX = sys.platform.startswith('linux')
+
+if not _IS_LINUX:
+    try:
+        from pywinauto.application import Application
+        from pywinauto.keyboard import send_keys
+        from pywinauto.timings import TimeoutError as PywinautoTimeoutError
+    except ImportError:
+        raise ImportError("pywinauto未安装，请运行: pip install pywinauto")
+else:
+    Application = None
+    send_keys = None
+    PywinautoTimeoutError = TimeoutError
 
 
 class UIAutomationController:
     """
-    UI自动化控制器
+    UI自动化控制器（跨平台）
     
     功能：
-    1. 使用UIA后端连接/启动Qt应用
-    2. 精确定位控件（通过automation_id, control_type等）
-    3. 智能等待控件状态变化
-    4. 执行控件操作（点击、输入、获取属性等）
-    5. 截图验证
-    6. 进程输出监控（捕获 ALSOFT/QMutex 等错误）
+    1. Windows: 使用UIA后端连接/启动Qt应用
+    2. Linux: 使用subprocess + xdotool
+    3. 精确定位控件
+    4. 截图验证
+    5. 进程输出监控
     """
     
     def __init__(self, backend: str = "uia"):
         self.backend = backend
-        self.app: Optional[Application] = None
+        self.app = None
         self.main_window = None
         self.process_id: Optional[int] = None
-        self._control_cache: Dict[str, Any] = {}  # 控件缓存
-        self._output_monitor: Optional[Any] = None  # ProcessOutputMonitor
+        self._control_cache: Dict[str, Any] = {}
+        self._output_monitor: Optional[Any] = None
+        self._process: Optional[Any] = None
+        self._window_id: Optional[str] = None  # Linux xdotool window id
         
     def start_application(self, exe_path: str, timeout: int = 15,
                          capture_process_output: bool = True) -> bool:
-        """
-        启动应用程序
-        
-        Args:
-            exe_path: 可执行文件路径
-            timeout: 启动超时时间（秒）
-            
-        Returns:
-            是否启动成功
-        """
+        """启动应用程序（跨平台）"""
         try:
             if not os.path.exists(exe_path):
                 raise FileNotFoundError(f"可执行文件不存在: {exe_path}")
 
-            # 测试时设置环境变量（若已设置则保留）
-            # WZ_LOG_MODE=1: 日志输出到 console
-            # WZ_TEST_MODE=1: 启用 TestPipeServer 命名管道
             if 'WZ_LOG_MODE' not in os.environ:
                 os.environ['WZ_LOG_MODE'] = '1'
             if 'WZ_TEST_MODE' not in os.environ:
@@ -63,14 +63,20 @@ class UIAutomationController:
 
             print(f"[UIAuto] 启动应用: {os.path.basename(exe_path)}")
             
-            # 使用subprocess启动，可选捕获 stdout/stderr 以检测运行时错误
-            import subprocess
+            # Linux: 设置 software OpenGL
+            env = os.environ.copy()
+            if _IS_LINUX:
+                env['LIBGL_ALWAYS_SOFTWARE'] = '1'
+                if 'DISPLAY' not in env:
+                    env['DISPLAY'] = ':1'
+            
             if capture_process_output:
                 self._process = subprocess.Popen(
                     [exe_path],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     cwd=os.path.dirname(exe_path),
+                    env=env,
                 )
                 from .process_output_monitor import ProcessOutputMonitor
                 self._output_monitor = ProcessOutputMonitor(
@@ -81,13 +87,12 @@ class UIAutomationController:
                 self._process = subprocess.Popen(
                     [exe_path],
                     cwd=os.path.dirname(exe_path),
+                    env=env,
                 )
             
-            # 等待应用初始化（Qt6需要更长时间）
             print(f"[UIAuto] 等待应用初始化...")
             time.sleep(5)
 
-            # 检查进程是否仍在运行（可能已崩溃）
             if self._process.poll() is not None:
                 err_msg = "进程已退出（可能崩溃）"
                 if capture_process_output and self._output_monitor:
@@ -96,37 +101,64 @@ class UIAutomationController:
                         err_msg += f"\n{summary[:500]}"
                 raise RuntimeError(err_msg)
 
-            # 尝试通过进程ID连接
-            try:
-                self.app = Application(backend=self.backend).connect(process=self._process.pid)
-            except Exception as conn_err:
-                # 进程可能已退出，再次检查
-                if self._process.poll() is not None:
-                    err_msg = "进程已退出（可能崩溃）"
-                    if capture_process_output and self._output_monitor:
-                        summary = self._output_monitor.get_errors_summary()
-                        if summary:
-                            err_msg += f"\n{summary[:500]}"
-                    raise RuntimeError(err_msg)
-                print(f"[UIAuto] 通过PID连接失败，尝试通过窗口标题连接: {conn_err}")
-                time.sleep(3)
-                self.app = Application(backend=self.backend).connect(title_re=".*MainWindow.*")
-            
-            # 获取主窗口
-            self.main_window = self.app.window()
-            
-            # 等待窗口可见
-            self.main_window.wait('visible', timeout=timeout)
-            
-            # 获取进程ID
-            self.process_id = self.app.process
-            
-            print(f"[UIAuto] [OK] 应用已启动，PID: {self.process_id}")
-            return True
+            self.process_id = self._process.pid
+
+            if _IS_LINUX:
+                # Linux: use xdotool to find the window
+                for _ in range(timeout):
+                    try:
+                        result = subprocess.run(
+                            ['xdotool', 'search', '--pid', str(self.process_id), '--name', ''],
+                            capture_output=True, text=True, timeout=3
+                        )
+                        wids = result.stdout.strip().split('\n')
+                        wids = [w for w in wids if w.strip()]
+                        if wids:
+                            self._window_id = wids[0]
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(1)
+                
+                if not self._window_id:
+                    print(f"[UIAuto] [WARN] 未找到窗口，但进程正在运行 PID: {self.process_id}")
+                else:
+                    print(f"[UIAuto] [OK] 应用已启动，PID: {self.process_id}, WID: {self._window_id}")
+                self.main_window = True  # placeholder
+                return True
+            else:
+                # Windows: use pywinauto
+                try:
+                    self.app = Application(backend=self.backend).connect(process=self._process.pid)
+                except Exception as conn_err:
+                    if self._process.poll() is not None:
+                        err_msg = "进程已退出（可能崩溃）"
+                        if capture_process_output and self._output_monitor:
+                            summary = self._output_monitor.get_errors_summary()
+                            if summary:
+                                err_msg += f"\n{summary[:500]}"
+                        raise RuntimeError(err_msg)
+                    print(f"[UIAuto] 通过PID连接失败，尝试通过窗口标题连接: {conn_err}")
+                    time.sleep(3)
+                    self.app = Application(backend=self.backend).connect(title_re=".*MainWindow.*")
+                
+                self.main_window = self.app.window()
+                self.main_window.wait('visible', timeout=timeout)
+                self.process_id = self.app.process
+                
+                print(f"[UIAuto] [OK] 应用已启动，PID: {self.process_id}")
+                return True
             
         except Exception as e:
             print(f"[UIAuto] [X] 启动失败: {e}")
             return False
+    
+    def get_control(self, automation_id: str = None, control_type: str = None,
+                   title: str = None, parent=None, use_cache: bool = False) -> Optional[Any]:
+        """获取控件（Linux上返回None，需通过快捷键操作）"""
+        if _IS_LINUX:
+            return None
+        return self._get_control_win(automation_id, control_type, title, parent, use_cache)
     
     def connect_to_application(self, process_id: int = None, title: str = None) -> bool:
         """
@@ -167,10 +199,10 @@ class UIAutomationController:
             print(f"[UIAuto] [X] 连接失败: {e}")
             return False
     
-    def get_control(self, automation_id: str = None, control_type: str = None,
+    def _get_control_win(self, automation_id: str = None, control_type: str = None,
                    title: str = None, parent=None, use_cache: bool = False) -> Optional[Any]:
         """
-        获取控件
+        获取控件（Windows pywinauto 实现）
         
         Args:
             automation_id: 自动化ID（Qt的objectName）
@@ -515,42 +547,86 @@ class UIAutomationController:
             print(f"[UIAuto] [X] 选择下拉框项失败: {e}")
             return False
     
+    def _pywinauto_keys_to_xdotool(self, keys: str) -> List[str]:
+        """将 pywinauto 格式按键转换为 xdotool key 序列"""
+        key_map = {
+            '{ENTER}': 'Return', '{ESC}': 'Escape', '{TAB}': 'Tab',
+            '{SPACE}': 'space', ' ': 'space',
+            '{UP}': 'Up', '{DOWN}': 'Down', '{LEFT}': 'Left', '{RIGHT}': 'Right',
+            '{PGUP}': 'Prior', '{PGDN}': 'Next',
+            '{HOME}': 'Home', '{END}': 'End',
+            '{DELETE}': 'Delete', '{BACKSPACE}': 'BackSpace',
+            '{F1}': 'F1', '{F2}': 'F2', '{F3}': 'F3', '{F4}': 'F4',
+            '{F5}': 'F5', '{F11}': 'F11', '{F12}': 'F12',
+        }
+        # Handle Ctrl+X style shortcuts
+        if keys.startswith('^') and len(keys) == 2:
+            return ['ctrl+' + keys[1].lower()]
+        # Handle {ENTER} etc
+        if keys in key_map:
+            return [key_map[keys]]
+        # Handle plain text (type it)
+        return None  # Signal to use xdotool type instead
+
     def send_keys_shortcut(self, keys: str, wait_after: float = 0.5):
-        """
-        发送键盘快捷键
-        
-        Args:
-            keys: 按键序列（pywinauto格式）
-            wait_after: 发送后等待时间
-        """
+        """发送键盘快捷键（跨平台）"""
         try:
-            send_keys(keys)
+            if _IS_LINUX:
+                if self._window_id:
+                    subprocess.run(['xdotool', 'windowactivate', self._window_id],
+                                   capture_output=True, timeout=5)
+                    time.sleep(0.3)
+                
+                xdo_keys = self._pywinauto_keys_to_xdotool(keys)
+                if xdo_keys:
+                    for k in xdo_keys:
+                        subprocess.run(['xdotool', 'key', '--clearmodifiers', k],
+                                       capture_output=True, timeout=3)
+                else:
+                    # Type as text (e.g. file path)
+                    clean = keys.replace('{ENTER}', '').replace('^', '')
+                    if clean:
+                        subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', '30', clean],
+                                       capture_output=True, timeout=10)
+                    if '{ENTER}' in keys:
+                        subprocess.run(['xdotool', 'key', 'Return'],
+                                       capture_output=True, timeout=3)
+            else:
+                send_keys(keys)
+            
             if wait_after > 0:
                 time.sleep(wait_after)
         except Exception as e:
             print(f"[UIAuto] [X] 发送按键失败: {e}")
     
     def capture_window_screenshot(self, save_path: str = None) -> Optional[Any]:
-        """
-        截取窗口截图
-        
-        Args:
-            save_path: 保存路径（可选）
-            
-        Returns:
-            PIL Image对象或None
-        """
+        """截取窗口截图（跨平台）"""
         try:
             if not self.main_window:
                 return None
             
-            image = self.main_window.capture_as_image()
-            
-            if save_path:
-                image.save(save_path)
-                print(f"[UIAuto] 截图已保存: {save_path}")
-            
-            return image
+            if _IS_LINUX:
+                from PIL import Image
+                import tempfile
+                tmp = save_path or tempfile.mktemp(suffix='.png')
+                if self._window_id:
+                    subprocess.run(['import', '-window', self._window_id, tmp],
+                                   capture_output=True, timeout=5)
+                else:
+                    subprocess.run(['import', '-window', 'root', tmp],
+                                   capture_output=True, timeout=5)
+                if os.path.exists(tmp):
+                    image = Image.open(tmp)
+                    if not save_path:
+                        os.unlink(tmp)
+                    return image
+                return None
+            else:
+                image = self.main_window.capture_as_image()
+                if save_path:
+                    image.save(save_path)
+                    print(f"[UIAuto] 截图已保存: {save_path}")
+                return image
             
         except Exception as e:
             print(f"[UIAuto] [X] 截图失败: {e}")
@@ -607,53 +683,64 @@ class UIAutomationController:
             return False
     
     def get_window_state(self) -> Dict[str, Any]:
-        """
-        获取窗口当前状态
-        
-        Returns:
-            包含窗口状态信息的字典
-        """
+        """获取窗口当前状态（跨平台）"""
         if not self.main_window:
             return {}
         
         try:
-            rect = self.main_window.rectangle()
-            return {
-                'title': self.main_window.window_text(),
-                'is_visible': self.main_window.is_visible(),
-                'is_enabled': self.main_window.is_enabled(),
-                'rectangle': {
-                    'left': rect.left,
-                    'top': rect.top,
-                    'right': rect.right,
-                    'bottom': rect.bottom,
-                    'width': rect.width(),
-                    'height': rect.height()
+            if _IS_LINUX:
+                state = {'is_visible': True, 'is_enabled': True}
+                if self._window_id:
+                    try:
+                        r = subprocess.run(['xdotool', 'getwindowname', self._window_id],
+                                           capture_output=True, text=True, timeout=3)
+                        state['title'] = r.stdout.strip()
+                        r2 = subprocess.run(['xdotool', 'getwindowgeometry', '--shell', self._window_id],
+                                            capture_output=True, text=True, timeout=3)
+                        for line in r2.stdout.strip().split('\n'):
+                            k, v = line.split('=', 1)
+                            state[k.lower()] = int(v)
+                    except Exception:
+                        pass
+                return state
+            else:
+                rect = self.main_window.rectangle()
+                return {
+                    'title': self.main_window.window_text(),
+                    'is_visible': self.main_window.is_visible(),
+                    'is_enabled': self.main_window.is_enabled(),
+                    'rectangle': {
+                        'left': rect.left, 'top': rect.top,
+                        'right': rect.right, 'bottom': rect.bottom,
+                        'width': rect.width(), 'height': rect.height()
+                    }
                 }
-            }
         except Exception as e:
             print(f"[UIAuto] 获取窗口状态失败: {e}")
             return {}
     
     def close_application(self, force: bool = False):
-        """
-        关闭应用程序
-        
-        Args:
-            force: 是否强制关闭
-        """
+        """关闭应用程序（跨平台）"""
         try:
-            # 停止输出监控
             if self._output_monitor:
                 self._output_monitor.stop()
                 self._output_monitor = None
             
-            if self.app:
-                if force:
-                    self.app.kill()
-                else:
-                    self.app.kill()
+            if _IS_LINUX:
+                if self._process and self._process.poll() is None:
+                    if force:
+                        self._process.kill()
+                    else:
+                        self._process.terminate()
+                    try:
+                        self._process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        self._process.kill()
                 print("[UIAuto] 应用已关闭")
+            else:
+                if self.app:
+                    self.app.kill()
+                    print("[UIAuto] 应用已关闭")
         except Exception as e:
             print(f"[UIAuto] 关闭应用出错: {e}")
     
