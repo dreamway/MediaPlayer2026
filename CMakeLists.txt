@@ -7,6 +7,14 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
+# 设置CMAKE_PREFIX_PATH以优先查找Homebrew安装的库（OpenAL, fmt）
+if(APPLE)
+    list(APPEND CMAKE_PREFIX_PATH
+        "/opt/homebrew/opt/openal-soft"
+        "/opt/homebrew/opt/fmt"
+    )
+endif()
+
 # Qt6 components
 find_package(Qt6 REQUIRED COMPONENTS
     Core Gui Widgets OpenGL OpenGLWidgets Network
@@ -23,8 +31,8 @@ pkg_check_modules(SWSCALE REQUIRED libswscale)
 pkg_check_modules(AVFILTER REQUIRED libavfilter)
 pkg_check_modules(AVDEVICE REQUIRED libavdevice)
 
-# OpenAL
-find_package(OpenAL REQUIRED)
+# OpenAL (使用NO_MODULE优先使用Homebrew提供的CMake配置文件)
+find_package(OpenAL REQUIRED NO_MODULE)
 
 # GLEW
 find_package(GLEW REQUIRED)
@@ -163,8 +171,6 @@ target_include_directories(WZMediaPlayer PRIVATE
     ${SWSCALE_INCLUDE_DIRS}
     ${AVFILTER_INCLUDE_DIRS}
     ${AVDEVICE_INCLUDE_DIRS}
-    # OpenAL
-    ${OPENAL_INCLUDE_DIR}
     # GLEW
     ${GLEW_INCLUDE_DIRS}
 )
@@ -174,6 +180,19 @@ target_include_directories(WZMediaPlayer PRIVATE
 target_compile_definitions(WZMediaPlayer PRIVATE
     SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE
     SPDLOG_FMT_EXTERNAL
+)
+
+# ---------- Link library directories ----------
+
+target_link_directories(WZMediaPlayer PRIVATE
+    # FFmpeg
+    ${AVCODEC_LIBRARY_DIRS}
+    ${AVFORMAT_LIBRARY_DIRS}
+    ${AVUTIL_LIBRARY_DIRS}
+    ${SWRESAMPLE_LIBRARY_DIRS}
+    ${SWSCALE_LIBRARY_DIRS}
+    ${AVFILTER_LIBRARY_DIRS}
+    ${AVDEVICE_LIBRARY_DIRS}
 )
 
 # ---------- Link libraries ----------
@@ -197,8 +216,8 @@ target_link_libraries(WZMediaPlayer PRIVATE
     ${SWSCALE_LIBRARIES}
     ${AVFILTER_LIBRARIES}
     ${AVDEVICE_LIBRARIES}
-    # OpenAL
-    ${OPENAL_LIBRARY}
+    # OpenAL (使用modern CMake target，会自动处理include directories)
+    OpenAL::OpenAL
     # GLEW & OpenGL
     GLEW::GLEW
     OpenGL::GL
