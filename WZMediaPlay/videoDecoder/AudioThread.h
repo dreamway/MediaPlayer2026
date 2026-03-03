@@ -100,7 +100,7 @@ private:
 
     // 音频时钟（在 AudioThread 中管理）
     nanoseconds currentPts_{0};
-    nanoseconds deviceStartTime_{nanoseconds::min()};
+    nanoseconds deviceStartTime_{kInvalidTimestamp};
 
     // wasSeeking_ 用于跟踪 seeking 状态变化（检测从 false 到 true 的变化，执行一次性初始化）
     // 注意：这是线程内部的优化标志，不是状态机的状态

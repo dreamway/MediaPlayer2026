@@ -108,7 +108,7 @@ bool FrameBuffer::getFrame(Frame& frame, const GetFrameOptions& options)
     Frame* currentFrame = &frames_[currentIdx];
     
     // 如果当前帧无效，尝试查找下一个有效帧
-    if (currentFrame->isEmpty() || currentFrame->ts() == nanoseconds::min()) {
+    if (currentFrame->isEmpty() || currentFrame->ts() == kInvalidTimestamp) {
         size_t nextValidIdx = findNextValidFrame(currentIdx);
         if (nextValidIdx == capacity_) {
             // 没有找到有效帧
@@ -135,7 +135,7 @@ bool FrameBuffer::getFrame(Frame& frame, const GetFrameOptions& options)
             Frame* nextFrame = &frames_[nextIdx];
             
             // 如果下一帧无效，停止
-            if (nextFrame->isEmpty() || nextFrame->ts() == nanoseconds::min()) {
+            if (nextFrame->isEmpty() || nextFrame->ts() == kInvalidTimestamp) {
                 break;
             }
             
@@ -296,7 +296,7 @@ size_t FrameBuffer::calculateSize() const
 
 bool FrameBuffer::isFrameExpired(nanoseconds framePts, nanoseconds clockTime, double frameRate) const
 {
-    if (framePts == nanoseconds::min()) {
+    if (framePts == kInvalidTimestamp) {
         return false;  // 无效帧不算过期
     }
     
@@ -325,7 +325,7 @@ size_t FrameBuffer::findNextValidFrame(size_t startIdx) const
     
     while (idx != currentWriteIdx) {
         // 使用新的Frame类的isEmpty()方法检查有效性
-        if (!frames_[idx].isEmpty() && frames_[idx].ts() != nanoseconds::min()) {
+        if (!frames_[idx].isEmpty() && frames_[idx].ts() != kInvalidTimestamp) {
             return idx;
         }
         idx = (idx + 1) % capacity_;
@@ -348,7 +348,7 @@ size_t FrameBuffer::findClosestFrame(nanoseconds clockTime, size_t startIdx) con
         // 使用新的Frame类的ts()方法获取时间戳
         if (!frames_[idx].isEmpty()) {
             nanoseconds framePts = frames_[idx].ts();
-            if (framePts != nanoseconds::min()) {
+            if (framePts != kInvalidTimestamp) {
                 nanoseconds diff = clockTime - framePts;
                 int64_t diffAbs = std::abs(diff.count());
                 if (diffAbs < bestDiff) {

@@ -150,9 +150,9 @@ void DemuxerThread::handleSeek()
     }
 
     // 验证seeking目标是否有效（避免seek到0导致UI错误）
-    if (seek_target == 0) {
-        SPDLOG_LOGGER_WARN(logger,"DemuxerThread::handleSeek: Ignoring seek request with target=0 (likely intermediate seek operation)");
-        // 重置标志，允许后续seeking
+    // 允许 seek 到 0（视频开头）— 之前的 ==0 检查导致无法 seek 到开头
+    if (seek_target < 0) {
+        SPDLOG_LOGGER_WARN(logger,"DemuxerThread::handleSeek: Ignoring seek request with negative target={}", seek_target);
         {
             if (!controller_ || !controller_->getThreadSyncManager().tryLock(seekMutex_, std::chrono::milliseconds(100))) {
                 logger->warn("DemuxerThread::handleSeek: Failed to lock seekMutex_ (timeout)");
@@ -185,17 +185,8 @@ void DemuxerThread::handleSeek()
         return;
     }
 
-    // 确保队列清空（防御性编程，requestSeek 时已清空）
-    try {
-        if (vPackets_ && vPackets_->Size() > 0) {
-            vPackets_->Reset("VideoQueue");
-        }
-        if (aPackets_ && aPackets_->Size() > 0) {
-            aPackets_->Reset("AudioQueue");
-        }
-    } catch (const std::exception &e) {
-        logger->error("DemuxerThread: Exception while resetting queues: {}", e.what());
-    }
+    // 注意：队列 Reset 由 PlayController::seek() 统一管理，此处不再重复 Reset
+    // 避免与消费者线程 race（消费者刚被唤醒又被 Reset 清空）
 
     // 通知 PlayController seek 完成（状态转换由 PlayController 处理）
     emit seekFinished(seek_target);
@@ -399,7 +390,7 @@ void DemuxerThread::run()
         // 主循环：统一使用 PlayController 的状态机检查退出条件
         SPDLOG_LOGGER_DEBUG(logger,
             "DemuxerThread::run: Entering main loop, controller_={}, isStopped()={}", (void *) controller_, controller_ ? controller_->isStopped() : true);
-        while (controller_ && !controller_->isStopped()) {
+        while (controller_ && !controller_->isStopped() && !controller_->isStopping()) {
             try {
                 //SPDLOG_LOGGER_DEBUG(logger,"DemuxerThread::run: Loop iteration");
                 // 更新线程健康检查时间戳
