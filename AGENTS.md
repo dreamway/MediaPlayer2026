@@ -173,40 +173,42 @@ Qt 6.6.3、FFmpeg、OpenGL、OpenAL、spdlog、fmt
 
 ## Cursor Cloud specific instructions
 
-### Platform limitation
-WZMediaPlayer is a **Windows-only** application (MSBuild + MSVC + Qt 6.6.3). The Cloud VM runs Linux, so the full application **cannot be built or run** here. The available development tasks on Linux are:
+### Cross-platform build (CMake, Ubuntu/Linux)
 
-### What you CAN do on the Cloud VM
-- **Lint (clang-format):** `find WZMediaPlay -name "*.cpp" -o -name "*.h" | grep -v 3rdparty | xargs clang-format --dry-run --Werror`
-- **Format code:** `find WZMediaPlay -name "*.cpp" -o -name "*.h" | grep -v 3rdparty | xargs clang-format -i`
-- **Compile & run C++ unit tests** (self-contained modules that don't require Qt/FFmpeg):
-  ```bash
-  # PlaybackStateMachine test
-  g++ -std=c++17 -DSTANDALONE_TEST -DFMT_HEADER_ONLY -DSPDLOG_FMT_EXTERNAL \
-    -I WZMediaPlay -I WZMediaPlay/3rdparty/spdlog_x64-windows/include \
-    -I WZMediaPlay/3rdparty/fmt_x64-windows/include \
-    WZMediaPlay/tests/PlaybackStateMachineTest.cpp WZMediaPlay/PlaybackStateMachine.cpp \
-    /tmp/logger_stub.cpp -o /tmp/PlaybackStateMachineTest -lpthread && /tmp/PlaybackStateMachineTest
+The project now supports cross-platform building via CMake. On Ubuntu:
 
-  # ErrorRecoveryManager test
-  g++ -std=c++17 -DSTANDALONE_TEST -DFMT_HEADER_ONLY -DSPDLOG_FMT_EXTERNAL \
-    -I WZMediaPlay -I WZMediaPlay/3rdparty/spdlog_x64-windows/include \
-    -I WZMediaPlay/3rdparty/fmt_x64-windows/include \
-    WZMediaPlay/tests/ErrorRecoveryManagerTest.cpp WZMediaPlay/ErrorRecoveryManager.cpp \
-    /tmp/logger_stub.cpp -o /tmp/ErrorRecoveryManagerTest -lpthread && /tmp/ErrorRecoveryManagerTest
-  ```
-  Note: A logger stub file is needed at `/tmp/logger_stub.cpp` with content:
-  ```cpp
-  #include <spdlog/spdlog.h>
-  spdlog::logger *logger = nullptr;
-  ```
+```bash
+# Install dependencies (one-time)
+sudo apt-get install -y qt6-base-dev qt6-multimedia-dev qt6-shadertools-dev \
+  libqt6opengl6-dev qt6-l10n-tools qt6-tools-dev qt6-tools-dev-tools \
+  libgl1-mesa-dev libglu1-mesa-dev libglew-dev libopenal-dev \
+  libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
+  libswscale-dev libavfilter-dev libavdevice-dev \
+  libspdlog-dev libfmt-dev cmake ninja-build pkg-config clang-format
+
+# Build
+mkdir -p build && cd build
+cmake .. -G Ninja -DCMAKE_CXX_COMPILER=g++
+ninja
+
+# Run unit tests
+ctest --output-on-failure
+
+# Run the application (needs display)
+cd build && ./WZMediaPlayer
+```
+
+### Running the application in Cloud VM
+- The Cloud VM has no GPU, so OpenGL rendering shows a black viewport. The application launches, initializes, and responds to input — only the video rendering area is black.
+- Launch: `cd /workspace/build && ./WZMediaPlayer`
+- Test video: `testing/video/test.mp4` (56MB)
+
+### Lint and format
+- **Check format:** `find WZMediaPlay -name "*.cpp" -o -name "*.h" | grep -v 3rdparty | xargs clang-format --dry-run --Werror`
+- **Apply format:** `find WZMediaPlay -name "*.cpp" -o -name "*.h" | grep -v 3rdparty | xargs clang-format -i`
 
 ### Known issues
-- `PlaybackStateMachineTest.cpp` line 32 has a pre-existing test logic bug: the test expects `Playing -> Seeking` to fail, but the state machine correctly allows this transition. The test comment says "Ready -> Seeking" but the state is actually `Playing` at that point.
-- The `testing/pywinauto/` directory referenced in docs does not exist in the current git checkout.
-- The `WZMediaPlay.sln` solution file is also missing from the repo.
-
-### What you CANNOT do on the Cloud VM
-- Full MSBuild compilation (requires Visual Studio + Windows SDK)
-- Run the application GUI (Windows-only, requires Qt 6.6.3 msvc2019_64)
-- Run pywinauto GUI automation tests (require running Windows app)
+- `PlaybackStateMachineTest.cpp` line 32 has a pre-existing test logic bug: expects `Playing -> Seeking` to fail, but state machine correctly allows it.
+- OpenGL video rendering requires a real GPU; Cloud VM renders black viewport due to software GL.
+- pywinauto test suite (`testing/pywinauto/`) is Windows-specific (uses `pywinauto` + `pywin32`); cannot run on Linux as-is.
+- The `WZMediaPlay.sln` solution file is missing from the repo (Windows-only build artifact).
