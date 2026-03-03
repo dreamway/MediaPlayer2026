@@ -170,3 +170,43 @@ Qt 6.6.3、FFmpeg、OpenGL、OpenAL、spdlog、fmt
 ## 会话管理
 
 代理可以使用会话ID保持跨多次调用的状态，用于持续对话。
+
+## Cursor Cloud specific instructions
+
+### Platform limitation
+WZMediaPlayer is a **Windows-only** application (MSBuild + MSVC + Qt 6.6.3). The Cloud VM runs Linux, so the full application **cannot be built or run** here. The available development tasks on Linux are:
+
+### What you CAN do on the Cloud VM
+- **Lint (clang-format):** `find WZMediaPlay -name "*.cpp" -o -name "*.h" | grep -v 3rdparty | xargs clang-format --dry-run --Werror`
+- **Format code:** `find WZMediaPlay -name "*.cpp" -o -name "*.h" | grep -v 3rdparty | xargs clang-format -i`
+- **Compile & run C++ unit tests** (self-contained modules that don't require Qt/FFmpeg):
+  ```bash
+  # PlaybackStateMachine test
+  g++ -std=c++17 -DSTANDALONE_TEST -DFMT_HEADER_ONLY -DSPDLOG_FMT_EXTERNAL \
+    -I WZMediaPlay -I WZMediaPlay/3rdparty/spdlog_x64-windows/include \
+    -I WZMediaPlay/3rdparty/fmt_x64-windows/include \
+    WZMediaPlay/tests/PlaybackStateMachineTest.cpp WZMediaPlay/PlaybackStateMachine.cpp \
+    /tmp/logger_stub.cpp -o /tmp/PlaybackStateMachineTest -lpthread && /tmp/PlaybackStateMachineTest
+
+  # ErrorRecoveryManager test
+  g++ -std=c++17 -DSTANDALONE_TEST -DFMT_HEADER_ONLY -DSPDLOG_FMT_EXTERNAL \
+    -I WZMediaPlay -I WZMediaPlay/3rdparty/spdlog_x64-windows/include \
+    -I WZMediaPlay/3rdparty/fmt_x64-windows/include \
+    WZMediaPlay/tests/ErrorRecoveryManagerTest.cpp WZMediaPlay/ErrorRecoveryManager.cpp \
+    /tmp/logger_stub.cpp -o /tmp/ErrorRecoveryManagerTest -lpthread && /tmp/ErrorRecoveryManagerTest
+  ```
+  Note: A logger stub file is needed at `/tmp/logger_stub.cpp` with content:
+  ```cpp
+  #include <spdlog/spdlog.h>
+  spdlog::logger *logger = nullptr;
+  ```
+
+### Known issues
+- `PlaybackStateMachineTest.cpp` line 32 has a pre-existing test logic bug: the test expects `Playing -> Seeking` to fail, but the state machine correctly allows this transition. The test comment says "Ready -> Seeking" but the state is actually `Playing` at that point.
+- The `testing/pywinauto/` directory referenced in docs does not exist in the current git checkout.
+- The `WZMediaPlay.sln` solution file is also missing from the repo.
+
+### What you CANNOT do on the Cloud VM
+- Full MSBuild compilation (requires Visual Studio + Windows SDK)
+- Run the application GUI (Windows-only, requires Qt 6.6.3 msvc2019_64)
+- Run pywinauto GUI automation tests (require running Windows app)
