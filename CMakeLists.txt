@@ -103,7 +103,7 @@ set(SOURCES
     ${WZMEDIA_SRC_DIR}/videoDecoder/opengl/Functions.cpp
     ${WZMEDIA_SRC_DIR}/videoDecoder/opengl/OpenGLCommon.cpp
     ${WZMEDIA_SRC_DIR}/videoDecoder/opengl/OpenGLRenderer.cpp
-    ${WZMEDIA_SRC_DIR}/videoDecoder/opengl/OpenGLVideoWidget.cpp
+    # OpenGLVideoWidget.cpp excluded: unused alternative widget, conflicts with QWidget-based VideoWidgetBase
     ${WZMEDIA_SRC_DIR}/videoDecoder/opengl/OpenGLWidget.cpp
     ${WZMEDIA_SRC_DIR}/videoDecoder/opengl/OpenGLWindow.cpp
     ${WZMEDIA_SRC_DIR}/videoDecoder/opengl/StereoOpenGLCommon.cpp

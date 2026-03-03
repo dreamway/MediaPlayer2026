@@ -193,16 +193,16 @@ MainWindow::MainWindow(QWidget *parent)
     ui.playWidget->SetPlayController(playController_);
 
     // 创建 CameraOpenGLWidget（与 StereoVideoWidget 同级）
+    // 注意：Qt 6.4 on Linux 的 QOpenGLWidget 存在 RHI 合成 bug，
+    // 即使 hide() 也会导致 rhiFlush 崩溃。Camera 功能在 Linux 上暂时禁用。
+#ifdef Q_OS_WIN
     cameraWidget_ = new CameraOpenGLWidget(ui.playWidget->parentWidget());
     if (cameraWidget_) {
-        cameraWidget_->hide(); // 默认隐藏
-        // 将 Camera Widget 添加到与 playWidget 相同的布局中
-        // 注意：playWidget 的父布局在 MainWindow.ui 中定义
+        cameraWidget_->hide();
         QWidget *parentWidget = ui.playWidget->parentWidget();
         if (parentWidget) {
             QVBoxLayout *parentLayout = qobject_cast<QVBoxLayout*>(parentWidget->layout());
             if (parentLayout) {
-                // 找到 playWidget 在布局中的位置，在其后插入 cameraWidget
                 int playWidgetIndex = parentLayout->indexOf(ui.playWidget);
                 if (playWidgetIndex >= 0) {
                     parentLayout->insertWidget(playWidgetIndex + 1, cameraWidget_);
@@ -213,6 +213,9 @@ MainWindow::MainWindow(QWidget *parent)
         }
         logger->info("MainWindow: CameraOpenGLWidget created as sibling of StereoVideoWidget");
     }
+#else
+    logger->info("MainWindow: CameraOpenGLWidget disabled on Linux (Qt 6 QOpenGLWidget RHI bug)");
+#endif
 
     // 创建 CameraManager 并设置 Camera Widget
     cameraManager_ = new CameraManager(this);
