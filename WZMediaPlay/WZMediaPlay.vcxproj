@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{26E91C23-889A-4763-9E34-19F538BFB7ED}</ProjectGuid>
+    <Keyword>QtVS_v304</Keyword>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">10.0</WindowsTargetPlatformVersion>
+    <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v142</PlatformToolset>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v142</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt_defaults.props')">
+    <Import Project="$(QtMsBuild)\qt_defaults.props" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
+    <QtInstall>6.6.3</QtInstall>
+    <QtModules>core;gui;network;widgets;opengl;openglwidgets;multimedia;multimediawidgets;shadertools</QtModules>
+    <QtBuildConfig>debug</QtBuildConfig>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
+    <QtInstall>6.6.3</QtInstall>
+    <QtModules>core;gui;network;widgets;opengl;openglwidgets;multimedia;multimediawidgets</QtModules>
+    <QtBuildConfig>release</QtBuildConfig>
+  </PropertyGroup>
+  <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
+    <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  </Target>
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>D:\DevTools\FFmpeg\include;D:\DevTools\openal-soft\include;.\3rdparty\spdlog_x64-windows\include;.\3rdparty\fmt_x64-windows\include;D:\DevTools\Qt\6.6.3\msvc2019_64\include\QtGui\6.6.3;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <UseFullPaths>false</UseFullPaths>
+      <PreprocessorDefinitions>GUI_PRIVATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>D:\DevTools\FFmpeg\lib;D:\DevTools\glew\lib\Release\x64;D:\DevTools\openal-soft\lib;.\3rdparty\spdlog_x64-windows\lib;.\3rdparty\fmt_x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;postproc.lib;swresample.lib;swscale.lib;OpenAL32.lib;glew32.lib;glu32.lib;OpenGL32.lib;spdlog.lib;fmt.lib;Wtsapi32.lib;DbgHelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile />
+    <ClCompile>
+      <AdditionalIncludeDirectories>D:\DevTools\FFmpeg\include;D:\DevTools\glew\include;D:\DevTools\openal-soft\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>D:\DevTools\FFmpeg\lib;D:\DevTools\glew\lib\Release\x64;D:\DevTools\openal-soft\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>avcodec.lib;avdevice.lib;avfilter.lib;avformat.lib;avutil.lib;postproc.lib;swresample.lib;swscale.lib;OpenAL32.lib;glew32.lib;glu32.lib;OpenGL32.lib;Wtsapi32.lib;DbgHelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ClCompile>
+      <MultiProcessorCompilation>
+      </MultiProcessorCompilation>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>
+      </SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="gui\AboutDialog.cpp" />
+    <ClCompile Include="gui\AdvertisementWidget.cpp" />
+    <ClCompile Include="BroadcastReceiver.cpp" />
+    <ClCompile Include="crash_handler.cpp" />
+    <ClCompile Include="gui\CustomSlider.cpp" />
+    <ClCompile Include="gui\CustomTabStyle.cpp" />
+    <ClCompile Include="gui\DrawWidget.cpp" />
+    <ClCompile Include="playlist\DropListWidget.cpp" />
+    <ClCompile Include="gui\FloatButton.cpp" />
+    <ClCompile Include="gui\FullscreenTipsWidget.cpp" />
+    <ClCompile Include="GlobalDef.cpp" />
+    <ClCompile Include="RemoteControlServer.cpp" />
+    <ClCompile Include="gui\SubtitleWidget.cpp" />
+    <ClCompile Include="TcpServerHelper.cpp" />
+    <ClCompile Include="TcpSocket.cpp" />
+    <ClCompile Include="UdpWorker.cpp" />
+    <ClCompile Include="gui\UpShowComboBox.cpp" />
+    <ClCompile Include="videoDecoder\OpenALAudio.cpp" />
+    <ClCompile Include="videoDecoder\Statistics.cpp" />
+    <ClCompile Include="videoDecoder\AVThread.cpp" />
+    <ClCompile Include="videoDecoder\Demuxer.cpp" />
+    <ClCompile Include="videoDecoder\DemuxerThread.cpp" />
+    <ClCompile Include="videoDecoder\VideoThread.cpp" />
+    <ClCompile Include="videoDecoder\AudioThread.cpp" />
+    <ClCompile Include="videoDecoder\hardware_decoder.cc" />
+    <ClCompile Include="videoDecoder\FrameBuffer.cpp" />
+    <ClCompile Include="videoDecoder\Frame.cpp" />
+    <ClCompile Include="videoDecoder\FFDecSW.cpp" />
+    <ClCompile Include="videoDecoder\FFDecHW.cpp" />
+   
+    <ClCompile Include="videoDecoder\VideoOutputCommon.cpp" />
+    <ClCompile Include="videoDecoder\VideoRenderer.cpp" />
+    <ClCompile Include="videoDecoder\VideoWidgetBase.cpp" />
+    <ClCompile Include="videoDecoder\AVClock.cpp" />
+    <ClCompile Include="videoDecoder\RendererFactory.cpp" />
+    <ClCompile Include="videoDecoder\opengl\DebugImageSaver.cpp" />
+    <ClCompile Include="videoDecoder\opengl\OpenGLRenderer.cpp" />
+    <ClCompile Include="videoDecoder\opengl\StereoOpenGLRenderer.cpp" />
+    <ClCompile Include="videoDecoder\opengl\Functions.cpp" />
+    <ClCompile Include="videoDecoder\opengl\OpenGLCommon.cpp" />
+    <ClCompile Include="videoDecoder\opengl\StereoOpenGLCommon.cpp" />
+    <ClCompile Include="videoDecoder\opengl\StereoOpenGLWidget.cpp" />
+    <ClCompile Include="videoDecoder\opengl\StereoOpenGLWindow.cpp" />
+    <ClCompile Include="camera\CameraOpenGLWidget.cpp" />
+    <ClCompile Include="videoDecoder\opengl\OpenGLWindow.cpp" />
+    <ClCompile Include="videoDecoder\opengl\OpenGLWidget.cpp" />
+    <ClCompile Include="ApplicationSettings.cpp" />
+    <ClCompile Include="playlist\PlayListData.cpp" />
+    <ClCompile Include="playlist\PlayListPage.cpp" />
+    <ClCompile Include="playlist\PlayListManager.cpp" />
+    <ClCompile Include="playlist\PlaylistItem.cpp" />
+    <ClCompile Include="playlist\Playlist.cpp" />
+    <ClCompile Include="PlayController.cpp" />
+    <ClCompile Include="test_support\TestPipeServer.cpp" />
+    <ClCompile Include="PlaybackStateMachine.cpp" />
+    <ClCompile Include="ErrorRecoveryManager.cpp" />
+    <ClCompile Include="ThreadSyncManager.cpp" />
+    <ClCompile Include="gui\SettingsDialog.cpp" />
+    <ClCompile Include="gui\SwitchButton.cpp" />
+    <ClCompile Include="StereoVideoWidget.cpp" />
+    <ClCompile Include="camera\CameraRenderer.cpp" />
+    <ClCompile Include="camera\CameraManager.cpp" />
+    <ClCompile Include="ShaderManager.cpp" />
+    <QtRcc Include="MainWindow.qrc" />
+    <QtRcc Include="videoDecoder\opengl\opengl.qrc" />
+    <QtUic Include="gui\AboutDialog.ui" />
+    <QtUic Include="gui\AdvertisementWidget.ui" />
+    <QtUic Include="gui\DrawWidget.ui" />
+    <QtUic Include="gui\FloatButton.ui" />
+    <QtUic Include="MainWindow.ui" />
+    <QtMoc Include="MainWindow.h" />
+    <QtMoc Include="test_support\TestPipeServer.h" />
+    <ClCompile Include="MainWindow.cpp" />
+    <ClCompile Include="main.cpp" />
+    <QtUic Include="playlist\PlayListPage.ui" />
+    <QtUic Include="gui\SettingsDialog.ui" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="videoDecoder\AVThread.h" />
+    <QtMoc Include="videoDecoder\DemuxerThread.h" />
+    <QtMoc Include="videoDecoder\VideoThread.h" />
+    <QtMoc Include="videoDecoder\AudioThread.h" />
+    <ClInclude Include="3rdparty\srtparser.h" />
+    <ClInclude Include="test_support\TestPipeServer.h" />
+    <QtMoc Include="playlist\DropListWidget.h" />
+    <QtMoc Include="RemoteControlServer.h" />
+    <ClInclude Include="resource.h" />
+    <QtMoc Include="UdpWorker.h" />
+    <QtMoc Include="TcpServerHelper.h" />
+    <QtMoc Include="TcpSocket.h" />
+    <ClInclude Include="gui\UpShowComboBox.h" />
+    <ClInclude Include="videoDecoder\OpenALAudio.h" />
+    <QtMoc Include="videoDecoder\Statistics.h" />
+    <ClInclude Include="videoDecoder\chronons.h" />
+    <ClInclude Include="videoDecoder\Demuxer.h" />
+    <ClInclude Include="videoDecoder\ffmpeg.h" />
+    <ClInclude Include="videoDecoder\FrameBuffer.h" />
+    <ClInclude Include="videoDecoder\hardware_decoder.h" />
+    <ClInclude Include="videoDecoder\packet_queue.h" />
+    <ClInclude Include="videoDecoder\Frame.h" />
+    <ClInclude Include="videoDecoder\Decoder.h" />
+    <ClInclude Include="videoDecoder\FFDecSW.h" />
+    <ClInclude Include="videoDecoder\FFDecHW.h" />
+    
+    <ClInclude Include="videoDecoder\VideoRenderer.h" />
+    <QtMoc Include="videoDecoder\VideoWidgetBase.h" />
+    <QtMoc Include="videoDecoder\AVClock.h" />
+    <ClInclude Include="videoDecoder\RendererFactory.h" />
+    <ClInclude Include="videoDecoder\VideoAdjustment.hpp" />
+    <ClInclude Include="videoDecoder\VideoOutputCommon.hpp" />
+    <ClInclude Include="videoDecoder\opengl\OpenGLRenderer.h" />
+    <ClInclude Include="videoDecoder\opengl\StereoOpenGLRenderer.h" />
+    <QtMoc Include="videoDecoder\opengl\DebugImageSaver.h" />
+    <ClInclude Include="videoDecoder\opengl\Functions.hpp" />
+    <ClInclude Include="videoDecoder\opengl\OpenGLCommon.hpp" />
+    <QtMoc Include="videoDecoder\opengl\OpenGLWindow.hpp" />
+    <QtMoc Include="videoDecoder\opengl\OpenGLWidget.hpp" />
+    <QtMoc Include="videoDecoder\opengl\StereoOpenGLWidget.hpp" />
+    <QtMoc Include="camera\CameraOpenGLWidget.hpp" />
+    <QtMoc Include="videoDecoder\opengl\StereoOpenGLWindow.hpp" />
+    <ClInclude Include="videoDecoder\opengl\StereoOpenGLCommon.hpp" />
+    <ClInclude Include="videoDecoder\opengl\OpenGLVertices.hpp" />
+    <QtMoc Include="gui\AboutDialog.h" />
+    <ClInclude Include="gui\AdvertisementWidget.h" />
+    <QtMoc Include="BroadcastReceiver.h" />
+    <QtMoc Include="gui\DrawWidget.h" />
+    <QtMoc Include="gui\CustomTabStyle.h  " />
+    <QtMoc Include="gui\CustomSlider.h" />  
+    <QtMoc Include="gui\FloatButton.h" /> 
+    <QtMoc Include="gui\FullscreenTipsWidget.h" />
+    <ClInclude Include="GlobalDef.h" />
+    <QtMoc Include="ApplicationSettings.h" />
+    <QtMoc Include="gui\SettingsDialog.h" />
+    <QtMoc Include="gui\SwitchButton.h" />
+    <ClInclude Include="playlist\PlayListData.h" />
+    <QtMoc Include="playlist\PlayListPage.h" />
+    <QtMoc Include="playlist\PlayListManager.h" />
+    <ClInclude Include="playlist\PlaylistItem.h" />
+    <QtMoc Include="playlist\Playlist.h" />
+    <QtMoc Include="PlayController.h" />
+    <QtMoc Include="gui\SubtitleWidget.h" />
+    <ClInclude Include="utils\ErrorCode.h" />
+    <QtMoc Include="StereoVideoWidget.h" />
+    <QtMoc Include="camera\CameraRenderer.h" />
+    <QtMoc Include="camera\CameraManager.h" />
+    <QtMoc Include="ShaderManager.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shader\fragment.glsl" />
+    <None Include="Shader\vertex.glsl" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtTranslation Include="language_en.ts" />
+    <QtTranslation Include="language_zh_CN.ts" />
+    <QtTranslation Include="language_zh_Hant.ts" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="WZMediaPlay.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Resources\icon\WZMediaPlayer.ico" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
+    <Import Project="$(QtMsBuild)\qt.targets" />
+  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

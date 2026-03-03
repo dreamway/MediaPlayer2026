@@ -1,0 +1,155 @@
+#include "PlaybackStateMachine.h"
+#include <spdlog/spdlog.h>
+
+extern spdlog::logger *logger;
+
+PlaybackStateMachine::PlaybackStateMachine()
+    : currentState_(PlaybackState::Idle)
+{
+}
+
+PlaybackState PlaybackStateMachine::getState() const {
+    return currentState_.load(std::memory_order_acquire);
+}
+
+bool PlaybackStateMachine::isIdle() const {
+    return getState() == PlaybackState::Idle;
+}
+
+bool PlaybackStateMachine::isOpening() const {
+    return getState() == PlaybackState::Opening;
+}
+
+bool PlaybackStateMachine::isReady() const {
+    return getState() == PlaybackState::Ready;
+}
+
+bool PlaybackStateMachine::isPlaying() const {
+    return getState() == PlaybackState::Playing;
+}
+
+bool PlaybackStateMachine::isPaused() const {
+    return getState() == PlaybackState::Paused;
+}
+
+bool PlaybackStateMachine::isSeeking() const {
+    return getState() == PlaybackState::Seeking;
+}
+
+bool PlaybackStateMachine::isStopping() const {
+    return getState() == PlaybackState::Stopping;
+}
+
+bool PlaybackStateMachine::isStopped() const {
+    return getState() == PlaybackState::Stopped;
+}
+
+bool PlaybackStateMachine::isError() const {
+    return getState() == PlaybackState::Error;
+}
+
+bool PlaybackStateMachine::canTransitionTo(PlaybackState newState) const {
+    PlaybackState current = getState();
+    return isValidTransition(current, newState);
+}
+
+bool PlaybackStateMachine::transitionTo(PlaybackState newState) {
+    return transitionTo(newState, "");
+}
+
+bool PlaybackStateMachine::transitionTo(PlaybackState newState, const std::string& reason) {
+    PlaybackState oldState = getState();
+    
+    // 检查状态转换是否合法
+    if (!isValidTransition(oldState, newState)) {
+        if (logger) {
+            logger->warn("PlaybackStateMachine: Invalid state transition from {} to {} (reason: {})",
+                        stateName(oldState), stateName(newState), reason);
+        }
+        return false;
+    }
+    
+    // 执行状态转换
+    currentState_.store(newState, std::memory_order_release);
+    
+    if (logger) {
+        SPDLOG_LOGGER_INFO(logger,"PlaybackStateMachine: State transition {} -> {} (reason: {})",
+                    stateName(oldState), stateName(newState), reason.empty() ? "none" : reason);
+    }
+    
+    // 调用回调
+    if (stateChangeCallback_) {
+        stateChangeCallback_(oldState, newState, reason);
+    }
+    
+    return true;
+}
+
+bool PlaybackStateMachine::isValidTransition(PlaybackState from, PlaybackState to) const {
+    // 相同状态转换是合法的（幂等性）
+    if (from == to) {
+        return true;
+    }
+    
+    // 定义合法的状态转换
+    switch (from) {
+        case PlaybackState::Idle:
+            return to == PlaybackState::Opening || to == PlaybackState::Error;
+            
+        case PlaybackState::Opening:
+            return to == PlaybackState::Ready || to == PlaybackState::Error || to == PlaybackState::Stopping;
+            
+        case PlaybackState::Ready:
+            return to == PlaybackState::Playing || to == PlaybackState::Stopping || to == PlaybackState::Error;
+            
+        case PlaybackState::Playing:
+            return to == PlaybackState::Paused || 
+                   to == PlaybackState::Seeking || 
+                   to == PlaybackState::Stopping || 
+                   to == PlaybackState::Error;
+            
+        case PlaybackState::Paused:
+            return to == PlaybackState::Playing || 
+                   to == PlaybackState::Seeking || 
+                   to == PlaybackState::Stopping || 
+                   to == PlaybackState::Error;
+            
+        case PlaybackState::Seeking:
+            return to == PlaybackState::Playing || 
+                   to == PlaybackState::Paused || 
+                   to == PlaybackState::Stopping || 
+                   to == PlaybackState::Error;
+            
+        case PlaybackState::Stopping:
+            return to == PlaybackState::Stopped || to == PlaybackState::Error;
+            
+        case PlaybackState::Stopped:
+            return to == PlaybackState::Idle || to == PlaybackState::Opening || to == PlaybackState::Error;
+            
+        case PlaybackState::Error:
+            return to == PlaybackState::Stopped || to == PlaybackState::Idle;
+            
+        default:
+            return false;
+    }
+}
+
+const char* PlaybackStateMachine::stateName(PlaybackState state) {
+    switch (state) {
+        case PlaybackState::Idle: return "Idle";
+        case PlaybackState::Opening: return "Opening";
+        case PlaybackState::Ready: return "Ready";
+        case PlaybackState::Playing: return "Playing";
+        case PlaybackState::Paused: return "Paused";
+        case PlaybackState::Seeking: return "Seeking";
+        case PlaybackState::Stopping: return "Stopping";
+        case PlaybackState::Stopped: return "Stopped";
+        case PlaybackState::Error: return "Error";
+        default: return "Unknown";
+    }
+}
+
+void PlaybackStateMachine::setStateChangeCallback(
+    std::function<void(PlaybackState, PlaybackState, const std::string&)> callback) {
+    stateChangeCallback_ = callback;
+}

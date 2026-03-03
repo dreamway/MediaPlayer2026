@@ -1,0 +1,547 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>qml;cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>qrc;rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Form Files">
+      <UniqueIdentifier>{99349809-55BA-4b9d-BF79-8FDBB0286EB3}</UniqueIdentifier>
+      <Extensions>ui</Extensions>
+    </Filter>
+    <Filter Include="Translation Files">
+      <UniqueIdentifier>{639EADAA-A684-42e4-A9AD-28FC9BCB8F7C}</UniqueIdentifier>
+      <Extensions>ts</Extensions>
+    </Filter>
+    <Filter Include="utils">
+      <UniqueIdentifier>{31490fec-1e53-4f76-83e4-7c9d57acc703}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="gui">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFC}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="playlist">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFD}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="VideoDecoder">
+      <UniqueIdentifier>{c84d77ee-0312-45da-a4fd-6a4290af5b2f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="VideoDecoder\opengl">
+      <UniqueIdentifier>{c84d77ee-0312-45da-a4fd-6a4290af5b2e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3rdparty">
+      <UniqueIdentifier>{82f07b8c-0070-4e34-88a6-0b531ede2b1a}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <QtRcc Include="MainWindow.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+    <QtUic Include="MainWindow.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtMoc Include="MainWindow.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClCompile Include="MainWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <QtRcc Include="videoDecoder\opengl\opengl.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GlobalDef.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\FloatButton.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\SettingsDialog.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\DrawWidget.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\CustomTabStyle.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\AboutDialog.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\SwitchButton.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="BroadcastReceiver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="playlist\PlayListData.cpp">
+      <Filter>playlist</Filter>
+    </ClCompile>
+    <ClCompile Include="playlist\PlayListPage.cpp">
+      <Filter>playlist</Filter>
+    </ClCompile>
+    <ClCompile Include="playlist\PlayListManager.cpp">
+      <Filter>playlist</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\AdvertisementWidget.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\CustomSlider.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\FullscreenTipsWidget.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\SubtitleWidget.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\audio.cc">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="ApplicationSettings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="gui\UpShowComboBox.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="playlist\DropListWidget.cpp">
+      <Filter>playlist</Filter>
+    </ClCompile>
+    <ClCompile Include="RemoteControlServer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UdpWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TcpServerHelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TcpSocket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\Demuxer.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\DemuxerThread.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\FrameBuffer.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\VideoThread.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\AudioThread.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\hardware_decoder.cc">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="PlayController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crash_handler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\Frame.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\FFDecSW.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\FFDecHW.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\VideoWriter.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <!-- <ClCompile Include="videoDecoder\GPUInstance.cpp"> --> <!-- 已移除 -->
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\VideoOutputCommon.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\AVClock.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\AVThread.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\Decoder.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\RendererFactory.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\VideoFilter.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\VideoRenderer.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\VideoWidgetBase.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\OpenALAudio.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\Statistics.cpp">
+      <Filter>VideoDecoder</Filter>
+    </ClCompile>
+    <ClCompile Include="playlist\PlaylistItem.cpp">
+      <Filter>playlist</Filter>
+    </ClCompile>
+    <ClCompile Include="playlist\Playlist.cpp">
+      <Filter>playlist</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\opengl\Functions.cpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\opengl\OpenGLCommon.cpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\opengl\StereoOpenGLCommon.cpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\opengl\OpenGLWidget.cpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\opengl\OpenGLWindow.cpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\opengl\StereoOpenGLWidget.cpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\opengl\StereoOpenGLWindow.cpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\opengl\DebugImageSaver.cpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\opengl\OpenGLRenderer.cpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\opengl\StereoOpenGLRenderer.cpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClCompile>
+    <ClCompile Include="videoDecoder\opengl\OpenGLVideoWidget.cpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClCompile>
+    <ClCompile Include="StereoVideoWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CameraRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ShaderManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="GlobalDef.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="playlist\PlayListData.h">
+      <Filter>playlist</Filter>
+    </ClInclude>
+    <ClInclude Include="playlist\DropListWidget.h">
+      <Filter>playlist</Filter>
+    </ClInclude>
+    <ClInclude Include="playlist\PlayListManager.h">
+      <Filter>playlist</Filter>
+    </ClInclude>
+    <ClInclude Include="playlist\PlayListPage.h">
+      <Filter>playlist</Filter>
+    </ClInclude>
+    <ClInclude Include="gui\AdvertisementWidget.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ErrorCode.h">
+      <Filter>utils</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\audio.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\chronons.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\ffmpeg.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\FrameBuffer.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\hardware_decoder.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\packet_queue.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="gui\UpShowComboBox.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui\FloatButton.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui\SettingsDialog.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui\DrawWidget.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui\CustomTabStyle.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui\AboutDialog.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui\SwitchButton.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui\CustomSlider.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui\FullscreenTipsWidget.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui\SubtitleWidget.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="3rdparty\srtparser.h">
+      <Filter>3rdparty</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\Demuxer.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\Frame.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\Decoder.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\FFDecSW.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\FFDecHW.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\VideoWriter.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\VideoAdjustment.hpp">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\VideoOutputCommon.hpp">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\AVClock.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\AVThread.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\RendererFactory.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\VideoFilter.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\VideoRenderer.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\VideoWidgetBase.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\OpenALAudio.h">
+      <Filter>VideoDecoder</Filter>
+    </ClInclude>
+    <QtMoc Include="videoDecoder\Statistics.h">
+      <Filter>VideoDecoder</Filter>
+    </QtMoc>
+    <ClInclude Include="playlist\PlaylistItem.h">
+      <Filter>playlist</Filter>
+    </ClInclude>
+    <QtMoc Include="playlist\Playlist.h">
+      <Filter>playlist</Filter>
+    </QtMoc>
+    <ClInclude Include="videoDecoder\opengl\Functions.hpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\opengl\OpenGLCommon.hpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\opengl\StereoOpenGLCommon.hpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\opengl\OpenGLVertices.hpp">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\opengl\DebugImageSaver.h">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\opengl\OpenGLRenderer.h">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\opengl\StereoOpenGLRenderer.h">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClInclude>
+    <ClInclude Include="videoDecoder\opengl\OpenGLVideoWidget.h">
+      <Filter>VideoDecoder\opengl</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="gui\FloatButton.h">
+      <Filter>gui</Filter>
+    </QtMoc>
+    <QtMoc Include="gui\SettingsDialog.h">
+      <Filter>gui</Filter>
+    </QtMoc>
+    <QtMoc Include="gui\DrawWidget.h">
+      <Filter>gui</Filter>
+    </QtMoc>
+    <QtMoc Include="gui\CustomTabStyle.h">
+      <Filter>gui</Filter>
+    </QtMoc>
+    <QtMoc Include="gui\AboutDialog.h">
+      <Filter>gui</Filter>
+    </QtMoc>
+    <QtMoc Include="gui\SwitchButton.h">
+      <Filter>gui</Filter>
+    </QtMoc>
+    <QtMoc Include="playlist\PlayListPage.h">
+      <Filter>playlist</Filter>
+    </QtMoc>
+    <QtMoc Include="BroadcastReceiver.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="gui\CustomSlider.h">
+      <Filter>gui</Filter>
+    </QtMoc>
+    <QtMoc Include="gui\FullscreenTipsWidget.h">
+      <Filter>gui</Filter>
+    </QtMoc>
+    <QtMoc Include="gui\SubtitleWidget.h">
+      <Filter>gui</Filter>
+    </QtMoc>
+    <QtMoc Include="ApplicationSettings.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="playlist\DropListWidget.h">
+      <Filter>playlist</Filter>
+    </QtMoc>
+    <QtMoc Include="playlist\PlayListManager.h">
+      <Filter>playlist</Filter>
+    </QtMoc>
+    <QtMoc Include="playlist\PlayListData.h">
+      <Filter>playlist</Filter>
+    </QtMoc>
+    <QtMoc Include="RemoteControlServer.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="UdpWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="TcpServerHelper.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="TcpSocket.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="videoDecoder\DemuxerThread.h">
+      <Filter>VideoDecoder</Filter>
+    </QtMoc>
+    <QtMoc Include="videoDecoder\VideoThread.h">
+      <Filter>VideoDecoder</Filter>
+    </QtMoc>
+    <QtMoc Include="videoDecoder\AudioThread.h">
+      <Filter>VideoDecoder</Filter>
+    </QtMoc>
+    <QtMoc Include="PlayController.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="videoDecoder\opengl\OpenGLWindow.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="videoDecoder\opengl\OpenGLWidget.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="videoDecoder\opengl\StereoOpenGLWidget.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="videoDecoder\opengl\StereoOpenGLWindow.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="StereoVideoWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="CameraRenderer.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="ShaderManager.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shader\fragment.glsl">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="Shader\vertex.glsl">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <QtUic Include="gui\FloatButton.ui">
+      <Filter>gui</Filter>
+    </QtUic>
+    <QtUic Include="gui\SettingsDialog.ui">
+      <Filter>gui</Filter>
+    </QtUic>
+    <QtUic Include="gui\DrawWidget.ui">
+      <Filter>gui</Filter>
+    </QtUic>
+    <QtUic Include="gui\AdvertisementWidget.ui">
+      <Filter>gui</Filter>
+    </QtUic>
+    <QtUic Include="gui\AboutDialog.ui">
+      <Filter>gui</Filter>
+    </QtUic>
+    <QtUic Include="playlist\PlayListPage.ui">
+      <Filter>playlist</Filter>
+    </QtUic>
+  </ItemGroup>
+  <ItemGroup>
+    <QtTranslation Include="language_en.ts">
+      <Filter>Translation Files</Filter>
+    </QtTranslation>
+    <QtTranslation Include="language_zh_CN.ts">
+      <Filter>Translation Files</Filter>
+    </QtTranslation>
+    <QtTranslation Include="language_zh_Hant.ts">
+      <Filter>Translation Files</Filter>
+    </QtTranslation>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="WZMediaPlay.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Resources\icon\WZMediaPlayer.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
+</Project>
