@@ -151,6 +151,16 @@ qt_add_executable(WZMediaPlayer
     ${QRC_FILES}
 )
 
+# 为 macOS 创建 .app bundle
+if(APPLE)
+    set_target_properties(WZMediaPlayer PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.leadwit.WZMediaPlayer"
+        MACOSX_BUNDLE_BUNDLE_VERSION "1.0.0"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.0"
+    )
+endif()
+
 # ---------- Include directories ----------
 
 target_include_directories(WZMediaPlayer PRIVATE

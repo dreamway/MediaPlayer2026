@@ -73,10 +73,13 @@ MainWindow::MainWindow(QWidget *parent)
     ////Setup Logger
     bool setupOk = setupLogger();
     if (false == setupOk) {
-        QMessageBox::StandardButton button = QMessageBox::critical(static_cast<QWidget *>(this), QString(tr("Error")), QString(tr("Setup Logger Failed.")));
+        QMessageBox::StandardButton button = QMessageBox::critical(static_cast QWidget *>(this), QString(tr("Error")), QString(tr("Setup Logger Failed.")));
         std::cerr << "Logger setup failed.";
         exit(0);
     }
+
+    // 调试：验证logger初始化成功
+    logger->info("Setup completed. logger pointer value: {}", static_cast<void*>(logger));
 
     setWindowFlags(Qt::CustomizeWindowHint);
 
