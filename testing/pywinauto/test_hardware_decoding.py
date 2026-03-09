@@ -326,10 +326,15 @@ def main():
     print("=" * 80)
     print()
     
-    # 配置路径（根据实际情况修改）
-    exe_path = r"E:\WZMediaPlayer_2025\x64\Debug\WZMediaPlay.exe"
-    test_video_path = r"D:\BaiduNetdiskDownload\test.mp4"
-    
+    # 配置路径（从 config.ini / config.py 读取）
+    try:
+        import config as test_config
+        exe_path = test_config.PLAYER_EXE_PATH
+        test_video_path = test_config.TEST_VIDEO_PATH
+    except ImportError:
+        exe_path = r"D:\2026Github\build\Release\WZMediaPlayer.exe"
+        test_video_path = r"D:\2026Github\testing\video\test.mp4"
+
     # 创建硬件解码测试器
     tester = WZMediaPlayerHardwareDecodingTester(exe_path, test_video_path)
     

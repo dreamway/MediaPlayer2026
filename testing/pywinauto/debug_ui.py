@@ -49,9 +49,14 @@ def find_control_recursive(parent, automation_id, indent=0):
     return None
 
 def main():
-    exe_path = r"E:\WZMediaPlayer_2025\x64\Debug\WZMediaPlay.exe"
-    video_path = r"D:\BaiduNetdiskDownload\test.mp4"
-    
+    try:
+        import config as test_config
+        exe_path = test_config.PLAYER_EXE_PATH
+        video_path = test_config.TEST_VIDEO_PATH
+    except ImportError:
+        exe_path = r"D:\2026Github\build\Release\WZMediaPlayer.exe"
+        video_path = r"D:\2026Github\testing\video\test.mp4"
+
     ui = UIAutomationController(backend="uia")
     
     # 启动应用

@@ -124,9 +124,16 @@ tester.log_test("简单操作", True, check_log=False)
 3. **日志格式**：如果exe日志格式变化，可能需要调整解析逻辑
 4. **性能影响**：实时监控会消耗一定资源，但影响很小
 
+## run_all_tests 与闭环测试的适配关系
+
+- **run_closed_loop_tests.py / unified_closed_loop_tests.py**：使用 `core` 中的 `UIAutomationController` 启动应用时已开启 `capture_process_output=True`，即使用 **ProcessOutputMonitor** 捕获 stdout/stderr；同时使用 **ImageVerifier** 做图像闭环验证，部分流程使用 **AudioPipeClient**。
+- **run_all_tests.py**：已适配 **ProcessOutputMonitor**。`main.WZMediaPlayerTester` 在 `start_player()` 时若存在 `core.process_output_monitor`，会以 `stdout=PIPE, stderr=STDOUT` 启动进程并启动 ProcessOutputMonitor；`log_test()` 会据此将“进程输出关键错误”纳入失败判定；各阶段结果中会带上 `process_output` 摘要并写入完整报告。报告会**先写入文件再打印**，避免仅输出到终端时未生成有效报告文件。
+- **图像/音频验证**：`run_all_tests` 当前仍以快捷键+日志监控为主，未接入 ImageVerifier / AudioPipeClient；需要图像或音频闭环时请使用 `run_closed_loop_tests.py` 或 `unified_closed_loop_tests.py`。
+
 ## 未来改进
 
 - [ ] 支持更多日志格式
 - [ ] 可配置的错误模式
 - [ ] 日志统计和分析
 - [ ] 自动生成错误报告
+- [ ] run_all_tests 可选接入 ImageVerifier / AudioPipeClient（与闭环入口一致）

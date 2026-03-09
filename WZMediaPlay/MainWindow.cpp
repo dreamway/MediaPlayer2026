@@ -73,7 +73,7 @@ MainWindow::MainWindow(QWidget *parent)
     ////Setup Logger
     bool setupOk = setupLogger();
     if (false == setupOk) {
-        QMessageBox::StandardButton button = QMessageBox::critical(static_cast QWidget *>(this), QString(tr("Error")), QString(tr("Setup Logger Failed.")));
+        QMessageBox::StandardButton button = QMessageBox::critical(static_cast<QWidget *>(this), QString(tr("Error")), QString(tr("Setup Logger Failed.")));
         std::cerr << "Logger setup failed.";
         exit(0);
     }
@@ -930,7 +930,7 @@ void MainWindow::initUI()
 
 void MainWindow::registerSysNotification()
 {
-#ifdef Q_OS_WINDOWS
+#ifdef Q_OS_WIN
     // 注册指定窗口以接收会话更改通知，获取锁屏，解锁，登录，注销等消息
     bool ret = WTSRegisterSessionNotification((HWND) this->winId(), NOTIFY_FOR_THIS_SESSION);
     qDebug() << "会话事件通知注册" << (ret ? "成功" : "失败");
@@ -1352,11 +1352,16 @@ int MainWindow::openPath(QString path, bool addPlayList)
     QString strTotalTime
         = QString("%1:%2:%3").arg(totalHour, 2, 10, QLatin1Char('0')).arg(totalMinute, 2, 10, QLatin1Char('0')).arg(totalSecond, 2, 10, QLatin1Char('0'));
     ui.label_totalTime->setText(strTotalTime);
-    //  set play progress bar
+    //  set play progress bar（BUG-019：切换视频后进度条与当前时间必须重置为 0）
     ui.horizontalSlider_playProgress->setMaximum(mvTotalTimeSecond);
     ui.horizontalSlider_playProgress->setSingleStep(1);
-    
-    logger->info("openPath: Set progress bar max to {} seconds ({} ms)", mvTotalTimeSecond, mvTotalTimeMs);
+    ui.horizontalSlider_playProgress->blockSignals(true);
+    ui.horizontalSlider_playProgress->setValue(0);
+    ui.horizontalSlider_playProgress->blockSignals(false);
+    ui.label_playTime->setText(QStringLiteral("00:00:00"));
+    currentElapsedInSeconds_ = 0;
+
+    logger->info("openPath: Set progress bar max to {} seconds ({} ms), value=0", mvTotalTimeSecond, mvTotalTimeMs);
     //  set volume
     // float volume = ui.playWidget->GetVolume();
     // ui.horizontalSlider_volume->setValue(volume * 100);
@@ -3320,6 +3325,19 @@ bool MainWindow::isPlaybackFinished() const
     return finished;
 }
 
+void MainWindow::resetUiWhenPlaybackFinishedNoNext()
+{
+    if (ui.playWidget) {
+        ui.playWidget->clear();
+        ui.playWidget->StopRendering();
+    }
+    ui.horizontalSlider_playProgress->setValue(0);
+    ui.horizontalSlider_playProgress->setEnabled(false);
+    ui.label_totalTime->setText(QStringLiteral("00:00:00"));
+    ui.label_playTime->setText(QStringLiteral("00:00:00"));
+    ui.pushButton_playPause->setChecked(false);
+}
+
 void MainWindow::handlePlaybackFinished()
 {
     // 使用 PlayListManager 的播放模式
@@ -3331,7 +3349,7 @@ void MainWindow::handlePlaybackFinished()
         logger->info("Sequential mode: Playing next video");
         if (!playListManager_->switchToNextVideo()) {
             logger->info("Sequential mode: No next video, stopping playback");
-            ui.playWidget->StopRendering();
+            resetUiWhenPlaybackFinishedNoNext();
         } else {
             QString path = playListManager_->getCurrentVideoPath();
             if (!path.isEmpty()) {
@@ -3350,6 +3368,8 @@ void MainWindow::handlePlaybackFinished()
                 if (!firstVideoPath.isEmpty()) {
                     openPath(firstVideoPath, false);
                 }
+            } else {
+                resetUiWhenPlaybackFinishedNoNext();
             }
         } else {
             QString path = playListManager_->getCurrentVideoPath();
@@ -3363,7 +3383,7 @@ void MainWindow::handlePlaybackFinished()
         logger->info("Random mode: Playing random video");
         if (!playListManager_->switchToNextVideo()) {
             logger->info("Random mode: Failed to switch, stopping playback");
-            ui.playWidget->StopRendering();
+            resetUiWhenPlaybackFinishedNoNext();
         } else {
             QString path = playListManager_->getCurrentVideoPath();
             if (!path.isEmpty()) {
@@ -3383,7 +3403,7 @@ void MainWindow::handlePlaybackFinished()
 
     default:
         logger->warn("Unknown play mode: {}, stopping playback", static_cast<int>(playMode));
-        ui.playWidget->StopRendering();
+        resetUiWhenPlaybackFinishedNoNext();
         break;
     }
 }

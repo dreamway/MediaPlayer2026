@@ -351,11 +351,12 @@ bool VideoThread::decodeFrame(Frame &videoFrame, int &bytesConsumed, AVPixelForm
                     videoFrame.width(0),
                     videoFrame.height(0));
 
-                // 更新统计信息
+                // 成功解码：更新统计 + 重置错误计数
                 if (statistics_) {
                     statistics_->incrementDecodedFrames(true);
                     statistics_->setVideoDecodeTime(static_cast<double>(decodeVideoDuration));
                 }
+                errorRecoveryManager_.resetErrorCount(ErrorType::DecodeError);
             }
         }
     } catch (const std::exception &e) {
@@ -367,7 +368,11 @@ bool VideoThread::decodeFrame(Frame &videoFrame, int &bytesConsumed, AVPixelForm
 
         if (recovery.action == RecoveryAction::StopPlayback) {
             emit errorOccurred(-1);
-            return false; // 停止播放
+            return false;
+        }
+        if (recovery.action == RecoveryAction::FlushAndRetry && dec_) {
+            dec_->flushBuffers();
+            SPDLOG_LOGGER_INFO(logger, "VideoThread: FlushAndRetry — decoder flushed (retry {})", recovery.retryCount);
         }
 
         vPackets_->popPacket("VideoQueue");
@@ -383,6 +388,9 @@ bool VideoThread::decodeFrame(Frame &videoFrame, int &bytesConsumed, AVPixelForm
         if (recovery.action == RecoveryAction::StopPlayback) {
             emit errorOccurred(-1);
             return false;
+        }
+        if (recovery.action == RecoveryAction::FlushAndRetry && dec_) {
+            dec_->flushBuffers();
         }
 
         vPackets_->popPacket("VideoQueue");
@@ -747,8 +755,8 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
 
     // 如果视频滞后太多，强制渲染，避免一直卡顿
     if (frameExpired) {
-        if (logger && (frameCount_ % 10 == 0)) { // 每10帧输出一次，避免日志过多
-            SPDLOG_LOGGER_WARN(
+        if (logger && (frameCount_ % 10 == 0)) { // 每10帧输出一次，避免日志过多（BUG-026：降为 debug 减噪）
+            SPDLOG_LOGGER_DEBUG(
                 logger,
                 "VideoThread::renderFrame: Frame expired (lag={}ms), forcing render: framePts={}ms, masterClock={}ms",
                 std::chrono::duration_cast<milliseconds>(-diff).count(),

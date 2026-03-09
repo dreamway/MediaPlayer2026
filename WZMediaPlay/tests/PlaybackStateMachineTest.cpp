@@ -28,9 +28,13 @@ void testStateTransitions() {
     TEST_ASSERT(sm.transitionTo(PlaybackState::Playing), "Ready -> Playing should succeed");
     TEST_ASSERT(sm.getState() == PlaybackState::Playing, "State should be Playing");
     
-    // 测试非法状态转换
-    TEST_ASSERT(!sm.transitionTo(PlaybackState::Seeking), "Ready -> Seeking should fail (must go through Playing first)");
-    TEST_ASSERT(sm.getState() == PlaybackState::Playing, "State should still be Playing");
+    // 测试非法状态转换：Ready -> Seeking 应失败（必须经 Playing/Paused）
+    PlaybackStateMachine smReady;
+    smReady.transitionTo(PlaybackState::Opening);
+    smReady.transitionTo(PlaybackState::Ready);
+    TEST_ASSERT(smReady.getState() == PlaybackState::Ready, "State should be Ready for invalid transition test");
+    TEST_ASSERT(!smReady.transitionTo(PlaybackState::Seeking), "Ready -> Seeking should fail (must go through Playing first)");
+    TEST_ASSERT(smReady.getState() == PlaybackState::Ready, "State should still be Ready after failed Seeking");
     
     std::cout << "State transitions test passed!" << std::endl;
 }

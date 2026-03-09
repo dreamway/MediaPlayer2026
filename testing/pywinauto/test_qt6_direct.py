@@ -246,9 +246,14 @@ def main():
     print("="*60)
     print()
 
-    # Configure paths (modify as needed)
-    exe_path = r"E:\WZMediaPlayer_2025\x64\Debug\WZMediaPlay.exe"
-    test_video_path = r"D:\BaiduNetdiskDownload\test.mp4"
+    # Configure paths (from config.ini / config.py)
+    try:
+        import config as test_config
+        exe_path = test_config.PLAYER_EXE_PATH
+        test_video_path = test_config.TEST_VIDEO_PATH
+    except ImportError:
+        exe_path = r"D:\2026Github\build\Release\WZMediaPlayer.exe"
+        test_video_path = r"D:\2026Github\testing\video\test.mp4"
 
     # Create tester
     tester = Qt6SimpleTester(exe_path, test_video_path)

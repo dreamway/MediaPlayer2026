@@ -75,17 +75,19 @@ class WZMediaPlayerFullTestSuite:
             tester.test_multiple_seeks()
             time.sleep(2)
             tester.test_volume()
-            
-            # 保存结果
+            time.sleep(2)
+            tester.test_video_switch_twice()
+
+            # 保存结果（含进程输出摘要，与 run_closed_loop_tests 一致）
+            po = tester.get_process_output_summary() if hasattr(tester, 'get_process_output_summary') else ""
             self.test_results.append({
                 "name": "基础播放测试",
                 "results": tester.test_results,
-                "passed": sum(1 for r in tester.test_results if r["passed"])
+                "passed": sum(1 for r in tester.test_results if r["passed"]),
+                "process_output": po or ""
             })
-            
             tester.stop_player()
             return True
-            
         except Exception as e:
             print(f"[错误] 基础测试异常: {e}")
             tester.stop_player()
@@ -114,16 +116,15 @@ class WZMediaPlayerFullTestSuite:
             
             result = tester.run_3d_tests()
             
-            # 保存结果
+            po = tester.get_process_output_summary() if hasattr(tester, 'get_process_output_summary') else ""
             self.test_results.append({
                 "name": "3D功能测试",
                 "results": tester.test_results,
-                "passed": sum(1 for r in tester.test_results if r["passed"])
+                "passed": sum(1 for r in tester.test_results if r["passed"]),
+                "process_output": po or ""
             })
-            
             tester.stop_player()
             return result
-            
         except Exception as e:
             print(f"[错误] 3D测试异常: {e}")
             tester.stop_player()
@@ -151,17 +152,15 @@ class WZMediaPlayerFullTestSuite:
             time.sleep(3)
             
             result = tester.run_edge_case_tests()
-            
-            # 保存结果
+            po = tester.get_process_output_summary() if hasattr(tester, 'get_process_output_summary') else ""
             self.test_results.append({
                 "name": "边界条件测试",
                 "results": tester.test_results,
-                "passed": sum(1 for r in tester.test_results if r["passed"])
+                "passed": sum(1 for r in tester.test_results if r["passed"]),
+                "process_output": po or ""
             })
-            
             tester.stop_player()
             return result
-            
         except Exception as e:
             print(f"[错误] 边界条件测试异常: {e}")
             tester.stop_player()
@@ -189,17 +188,15 @@ class WZMediaPlayerFullTestSuite:
             time.sleep(3)
             
             result = tester.run_av_sync_tests()
-            
-            # 保存结果
+            po = tester.get_process_output_summary() if hasattr(tester, 'get_process_output_summary') else ""
             self.test_results.append({
                 "name": "音视频同步测试",
                 "results": tester.test_results,
-                "passed": sum(1 for r in tester.test_results if r["passed"])
+                "passed": sum(1 for r in tester.test_results if r["passed"]),
+                "process_output": po or ""
             })
-            
             tester.stop_player()
             return result
-            
         except Exception as e:
             print(f"[错误] 同步测试异常: {e}")
             tester.stop_player()
@@ -227,17 +224,15 @@ class WZMediaPlayerFullTestSuite:
             time.sleep(3)
             
             result = tester.run_progress_seek_tests()
-            
-            # 保存结果
+            po = tester.get_process_output_summary() if hasattr(tester, 'get_process_output_summary') else ""
             self.test_results.append({
                 "name": "进度条和Seeking测试",
                 "results": tester.test_results,
-                "passed": sum(1 for r in tester.test_results if r["passed"])
+                "passed": sum(1 for r in tester.test_results if r["passed"]),
+                "process_output": po or ""
             })
-            
             tester.stop_player()
             return result
-            
         except Exception as e:
             print(f"[错误] 进度条测试异常: {e}")
             tester.stop_player()
@@ -265,17 +260,15 @@ class WZMediaPlayerFullTestSuite:
             time.sleep(3)
             
             result = tester.run_audio_tests()
-            
-            # 保存结果
+            po = tester.get_process_output_summary() if hasattr(tester, 'get_process_output_summary') else ""
             self.test_results.append({
                 "name": "音频测试",
                 "results": tester.test_results,
-                "passed": sum(1 for r in tester.test_results if r["passed"])
+                "passed": sum(1 for r in tester.test_results if r["passed"]),
+                "process_output": po or ""
             })
-            
             tester.stop_player()
             return result
-            
         except Exception as e:
             print(f"[错误] 音频测试异常: {e}")
             tester.stop_player()
@@ -303,17 +296,15 @@ class WZMediaPlayerFullTestSuite:
             time.sleep(3)
             
             result = tester.run_hardware_decoding_tests()
-            
-            # 保存结果
+            po = tester.get_process_output_summary() if hasattr(tester, 'get_process_output_summary') else ""
             self.test_results.append({
                 "name": "硬件解码测试",
                 "results": tester.test_results,
-                "passed": sum(1 for r in tester.test_results if r["passed"])
+                "passed": sum(1 for r in tester.test_results if r["passed"]),
+                "process_output": po or ""
             })
-            
             tester.stop_player()
             return result
-            
         except Exception as e:
             print(f"[错误] 硬件解码测试异常: {e}")
             tester.stop_player()
@@ -364,10 +355,15 @@ class WZMediaPlayerFullTestSuite:
                 for result in suite_result["results"]:
                     if not result["passed"]:
                         details = result.get('details', 'N/A')
-                        # 如果details太长，截断
                         if len(details) > 100:
                             details = details[:100] + "..."
                         report_lines.append(f"    - {result['name']}: {details}")
+            # 进程输出错误（ProcessOutputMonitor，与 run_closed_loop_tests 一致）
+            po = suite_result.get("process_output", "").strip()
+            if po:
+                report_lines.append("  进程输出错误:")
+                for line in po.splitlines():
+                    report_lines.append(f"    {line[:200]}")
         
         # 添加日志文件路径信息
         report_lines.append("")
@@ -393,20 +389,27 @@ class WZMediaPlayerFullTestSuite:
         return "\n".join(report_lines)
 
     def save_full_report(self, report: str):
-        """保存完整测试报告"""
+        """保存完整测试报告（先写文件再打印，确保终端仅输出时也有有效报告文件）"""
+        report_path = None
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f"test_report_full_{timestamp}.txt"
-            
             script_dir = os.path.dirname(os.path.abspath(__file__))
             report_path = os.path.join(script_dir, filename)
-            
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(report)
-            
-            print(f"\n✓ 完整测试报告已保存: {report_path}")
+                f.flush()
         except Exception as e:
-            print(f"\n✗ 保存测试报告失败: {e}")
+            report_path = None
+            try:
+                print(f"\n[FAIL] 保存测试报告失败: {e}")
+            except Exception:
+                pass
+        if report_path:
+            try:
+                print(f"\n[OK] 完整测试报告已保存: {report_path}")
+            except UnicodeEncodeError:
+                print(f"\n[OK] Report saved: {report_path}")
 
     def run_all(self) -> int:
         """运行所有测试"""
@@ -443,10 +446,13 @@ class WZMediaPlayerFullTestSuite:
         
         self.end_time = datetime.now()
         
-        # 生成报告
+        # 生成报告并先写入文件（避免仅输出到终端时无有效报告）
         report = self.generate_full_report()
-        print("\n" + report)
         self.save_full_report(report)
+        try:
+            print("\n" + report)
+        except UnicodeEncodeError:
+            print("\n[Report printed with encoding fallback; see file for full content]")
         
         # 返回结果（0=全部通过，1=有失败）
         all_passed = all(results)
@@ -454,12 +460,17 @@ class WZMediaPlayerFullTestSuite:
 
 
 def main():
-    """主函数"""
-    # 配置路径（根据实际情况修改）
-    exe_path = r"E:\WZMediaPlayer_2025\x64\Debug\WZMediaPlay.exe"
-    test_video_path = r"D:\BaiduNetdiskDownload\test.mp4"
-    test_3d_video_path = r"D:\BaiduNetdiskDownload\3D片源\test_3d.mp4"
-    
+    """主函数（路径从 config.ini / config.py 读取）"""
+    try:
+        import config as test_config
+        exe_path = test_config.PLAYER_EXE_PATH
+        test_video_path = test_config.TEST_VIDEO_PATH
+        test_3d_video_path = getattr(test_config, "TEST_3D_VIDEO_PATH", None) or test_video_path
+    except ImportError:
+        exe_path = r"D:\2026Github\build\Release\WZMediaPlayer.exe"
+        test_video_path = r"D:\2026Github\testing\video\test.mp4"
+        test_3d_video_path = test_video_path
+
     suite = WZMediaPlayerFullTestSuite(exe_path, test_video_path, test_3d_video_path)
     
     try:

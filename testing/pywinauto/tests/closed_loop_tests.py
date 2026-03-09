@@ -587,11 +587,15 @@ class WZMediaPlayerClosedLoopTests(ClosedLoopTestBase):
 
 
 def main():
-    """主函数"""
-    # 配置路径
-    exe_path = r"E:\WZMediaPlayer_2025\x64\Debug\WZMediaPlay.exe"
-    test_video_path = r"D:\BaiduNetdiskDownload\test.mp4"
-    
+    """主函数（路径从 config.ini / config.py 读取）"""
+    try:
+        import config as test_config
+        exe_path = test_config.PLAYER_EXE_PATH
+        test_video_path = test_config.TEST_VIDEO_PATH
+    except ImportError:
+        exe_path = r"D:\2026Github\build\Release\WZMediaPlayer.exe"
+        test_video_path = r"D:\2026Github\testing\video\test.mp4"
+
     # 检查路径
     if not os.path.exists(exe_path):
         print(f"[错误] 播放器可执行文件不存在: {exe_path}")

@@ -39,9 +39,9 @@ def get_default_paths():
     except ImportError:
         pass
     
-    # 默认路径
+    # 默认路径（与 run_all_tests.py 一致：build/Release）
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    exe_path = os.path.join(base_dir, 'x64', 'Debug', 'WZMediaPlay.exe')
+    exe_path = os.path.join(base_dir, 'build', 'Release', 'WZMediaPlayer.exe')
     video_path = r"D:\BaiduNetdiskDownload\test.mp4"
     
     return exe_path, video_path

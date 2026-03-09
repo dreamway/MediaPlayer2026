@@ -269,6 +269,12 @@ bool AudioThread::decodeAndWriteAudio(int buffer_len)
         return false;
     }
 
+    // BUG-025：stop 时不再重试 writeAudio，避免 OpenAL 已停止导致 10 次重试并触发 ErrorRecoveryManager
+    if (br_ || (controller_ && (controller_->isStopping() || controller_->isStopped()))) {
+        av_free(samples);
+        return true;
+    }
+
     // 关键修复：使用videoSeekPos代替audioSeekPos进行seek位置验证
     // 原因：AudioThread的seek位置判断与VideoThread不同步，导致音频被阻止播放
     double videoSeekPos = controller_->getVideoSeekPos();
@@ -296,6 +302,10 @@ bool AudioThread::decodeAndWriteAudio(int buffer_len)
 
     try {
         while (!writeSuccess && retryCount < maxRetries) {
+            if (br_ || (controller_ && (controller_->isStopping() || controller_->isStopped()))) {
+                av_free(samples);
+                return true;
+            }
             writeSuccess = audio_->writeAudio(samples, buffer_len);
             if (!writeSuccess) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));

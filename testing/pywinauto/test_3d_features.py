@@ -162,10 +162,15 @@ def main():
     print("=" * 80)
     print()
     
-    # 配置路径（根据实际情况修改）
-    exe_path = r"E:\WZMediaPlayer_2025\x64\Debug\WZMediaPlay.exe"
-    test_video_path = r"D:\BaiduNetdiskDownload\3D片源\test_3d.mp4"  # 使用3D测试视频
-    
+    # 配置路径（从 config.ini / config.py 读取，3D 使用 test_3d_video_path）
+    try:
+        import config as test_config
+        exe_path = test_config.PLAYER_EXE_PATH
+        test_video_path = getattr(test_config, "TEST_3D_VIDEO_PATH", None) or test_config.TEST_VIDEO_PATH
+    except ImportError:
+        exe_path = r"D:\2026Github\build\Release\WZMediaPlayer.exe"
+        test_video_path = r"D:\2026Github\testing\video\test.mp4"
+
     # 创建3D测试器
     tester = WZMediaPlayer3DTester(exe_path, test_video_path)
     

@@ -1,6 +1,7 @@
 #include "PlayController.h"
 #include "GlobalDef.h"
 #include "PlaybackStateMachine.h"
+#include "SystemMonitor.h"
 #include "videoDecoder/AudioThread.h"
 #include "videoDecoder/Decoder.h"
 #include "videoDecoder/DemuxerThread.h"
@@ -115,6 +116,10 @@ bool PlayController::open(const QString &filename)
     // 如果已经打开，先停止
     if (isOpened()) {
         stop();
+        // 切换视频时立即清空渲染器，避免出现“声音已是新视频但画面仍是旧视频”的残留
+        if (videoRenderer_) {
+            videoRenderer_->clear();
+        }
     }
 
     // 清除 seeking 状态（确保新打开文件时状态正确）
@@ -362,6 +367,14 @@ bool PlayController::open(const QString &filename)
     lastVideoFrameTime_ = std::chrono::steady_clock::now();
     lastAudioFrameTime_ = std::chrono::steady_clock::now();
     lastDemuxTime_ = std::chrono::steady_clock::now();
+
+    // 启动系统监控（仅在 LOG_LEVEL <= DEBUG 时启用，避免性能影响）
+    if (GlobalDef::getInstance()->LOG_LEVEL <= 1) {
+        if (!systemMonitor_) {
+            systemMonitor_ = std::make_unique<SystemMonitor>();
+        }
+        systemMonitor_->start(this);
+    }
 
     // 注意：音频播放将在 AudioThread::initializeDecoder() 中启动
     // 因为 audio_->open() 需要在 AudioThread 中调用，此时 source_ 才会被创建
@@ -703,6 +716,11 @@ void PlayController::stop()
         masterClock_->reset();
     }
 
+    // 0. 停止系统监控
+    if (systemMonitor_) {
+        systemMonitor_->stop();
+    }
+
     // 1. 转换到Stopping状态
     stateMachine_.transitionTo(PlaybackState::Stopping, "Stop requested");
 
@@ -722,6 +740,14 @@ void PlayController::stop()
     demuxThreadSafe = std::move(demuxThread_);
     videoThreadSafe = std::move(videoThread_);
     audioThreadSafe = std::move(audioThread_);
+
+    // 2.5 断开所有线程的 finished()->deleteLater()，避免线程退出时 Qt 排队 deleteLater 导致与 shared_ptr 析构竞态，引发 "QMutex: destroying locked mutex"（Debug 下 Qt 会打印）
+    if (demuxThreadSafe)
+        disconnectThreadSignals(demuxThreadSafe.get());
+    if (videoThreadSafe)
+        disconnectThreadSignals(videoThreadSafe.get());
+    if (audioThreadSafe)
+        disconnectThreadSignals(audioThreadSafe.get());
 
     // 3. 停止所有线程（使用统一停止顺序）
     // 停止DemuxerThread
@@ -823,12 +849,10 @@ void PlayController::stopThread(QThread *thread, const char *threadName, int tim
 
     SPDLOG_LOGGER_DEBUG(logger, "PlayController::stopThread: Stopping {}", threadName);
 
-    // 根据线程类型调用相应的停止方法
     if (strcmp(threadName, "AudioThread") == 0) {
         AudioThread *audioThread = dynamic_cast<AudioThread *>(thread);
         if (audioThread) {
             audioThread->requestStop();
-            // 通知音频队列线程可以退出等待
             aPackets_.setFinished();
         } else {
             SPDLOG_LOGGER_ERROR(logger, "PlayController::stopThread: Failed to cast to AudioThread");
@@ -838,18 +862,19 @@ void PlayController::stopThread(QThread *thread, const char *threadName, int tim
         VideoThread *videoThread = dynamic_cast<VideoThread *>(thread);
         if (videoThread) {
             videoThread->requestStop();
-            // 通知视频队列线程可以退出等待
             vPackets_.setFinished();
         } else {
             SPDLOG_LOGGER_ERROR(logger, "PlayController::stopThread: Failed to cast to VideoThread");
             thread->terminate();
         }
     } else if (strcmp(threadName, "DemuxerThread") == 0) {
-        // DemuxerThread 没有 requestStop 方法，直接终止
-        thread->terminate();
-        // 通知所有队列线程可以退出等待
-        vPackets_.setFinished();
-        aPackets_.setFinished();
+        // DemuxerThread 无 requestStop()，通过 controller_->isStopping()/isStopped() 与 setFinished() 退出
+        // setFinished() 已在 stop() 开头统一调用，此处仅轮询 isRunning()
+        DemuxerThread *demuxThread = dynamic_cast<DemuxerThread *>(thread);
+        if (!demuxThread) {
+            SPDLOG_LOGGER_ERROR(logger, "PlayController::stopThread: Failed to cast to DemuxerThread");
+            thread->terminate();
+        }
     } else {
         SPDLOG_LOGGER_WARN(logger, "PlayController::stopThread: Unknown thread type {}, terminating", threadName);
         thread->terminate();
@@ -1207,8 +1232,14 @@ int64_t PlayController::getCurrentPositionMs() const
         // 验证返回值是否超过视频时长（避免UI显示错误）
         int64_t durationMs = getDurationMs();
         if (durationMs > 0 && positionMs > durationMs) {
-            SPDLOG_LOGGER_WARN(
-                logger, "PlayController::getCurrentPositionMs: Position ({} ms) exceeds duration ({} ms), clamping to duration", positionMs, durationMs);
+            int64_t deltaMs = positionMs - durationMs;
+            if (deltaMs <= 100) {
+                SPDLOG_LOGGER_DEBUG(
+                    logger, "PlayController::getCurrentPositionMs: Position ({} ms) exceeds duration ({} ms), clamping to duration", positionMs, durationMs);
+            } else {
+                SPDLOG_LOGGER_WARN(
+                    logger, "PlayController::getCurrentPositionMs: Position ({} ms) exceeds duration ({} ms), clamping to duration", positionMs, durationMs);
+            }
             return durationMs;
         }
         return positionMs;

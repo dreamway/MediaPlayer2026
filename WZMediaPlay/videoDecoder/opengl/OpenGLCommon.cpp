@@ -372,9 +372,12 @@ void OpenGLCommon::paintGL()
         if (updateTimer.isActive())
             updateTimer.stop();
 
-        // 如果当前帧为空且从未渲染过，直接返回（避免闪烁）
-        if (frameIsEmpty && !hasImage)
+        // 如果当前帧为空且从未渲染过，清屏为黑再返回（修复 BUG-022：播放结束后花屏/绿品红）
+        if (frameIsEmpty && !hasImage) {
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
             return;
+        }
 
         // 如果当前帧为空但之前有渲染过，不 return：跳过纹理上传，但继续执行后面的 glDrawArrays，
         // 用已有纹理再画一帧，避免无新帧时出现黑屏闪烁（BUG 6）
@@ -564,7 +567,7 @@ void OpenGLCommon::paintGL()
 
             if (paintGLCounter % 100 == 0) {
                 if (logger)
-                    logger->warn("OpenGLCommon::paintGL called {} times, videoFrame.isEmpty(): {}, hasImage: {}", paintGLCounter, videoFrame.isEmpty(), hasImage);
+                    logger->debug("OpenGLCommon::paintGL called {} times, videoFrame.isEmpty(): {}, hasImage: {}", paintGLCounter, videoFrame.isEmpty(), hasImage);
             }
         }
 

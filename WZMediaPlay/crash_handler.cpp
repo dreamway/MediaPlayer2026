@@ -5,7 +5,7 @@
 #include <QStandardPaths>
 #include <QCoreApplication>
 
-#ifdef WIN32
+#ifdef Q_OS_WIN
 
 QString CrashHandler::dumpDirectory_;
 bool CrashHandler::initialized_ = false;
@@ -156,5 +156,74 @@ QString CrashHandler::getDumpFilePath()
     return QDir(dumpDirectory_).filePath(fileName);
 }
 
-#endif // WIN32
+#else
 
+#include <csignal>
+#include <cstdlib>
+#include <execinfo.h>
+
+QString CrashHandler::dumpDirectory_;
+bool CrashHandler::initialized_ = false;
+
+void CrashHandler::initialize(const QString& dumpDir)
+{
+    if (initialized_) return;
+
+    dumpDirectory_ = dumpDir.isEmpty()
+        ? QCoreApplication::applicationDirPath() + "/crash_dumps"
+        : dumpDir;
+
+    QDir dir;
+    if (!dir.exists(dumpDirectory_)) {
+        dir.mkpath(dumpDirectory_);
+    }
+
+    signal(SIGSEGV, signalHandler);
+    signal(SIGABRT, signalHandler);
+    signal(SIGFPE,  signalHandler);
+
+    initialized_ = true;
+
+    auto log = spdlog::get("logger");
+    if (log) {
+        log->info("CrashHandler initialized (Linux signal handler), dump dir: {}", dumpDirectory_.toStdString());
+    }
+}
+
+void CrashHandler::cleanup()
+{
+    if (initialized_) {
+        signal(SIGSEGV, SIG_DFL);
+        signal(SIGABRT, SIG_DFL);
+        signal(SIGFPE,  SIG_DFL);
+        initialized_ = false;
+    }
+}
+
+void CrashHandler::signalHandler(int sig)
+{
+    auto log = spdlog::get("logger");
+    if (log) {
+        log->critical("==========================================");
+        log->critical("CRASH DETECTED! Signal: {}", sig);
+        log->critical("==========================================");
+    }
+
+    void *frames[64];
+    int nframes = backtrace(frames, 64);
+    char **symbols = backtrace_symbols(frames, nframes);
+    if (symbols && log) {
+        for (int i = 0; i < nframes; ++i) {
+            log->critical("  [{}] {}", i, symbols[i]);
+        }
+        free(symbols);
+    }
+
+    if (log) {
+        log->flush();
+    }
+
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+#endif

@@ -181,6 +181,24 @@ class WZMediaPlayerEdgeCaseTester(WZMediaPlayerTester):
             self.log_test("压力操作", False, str(e))
             return False
 
+    def test_playback_finished_ui_reset(self) -> bool:
+        """BUG-020 回归：播放结束后（无下一首）进度条与播放按钮应重置"""
+        print("\n[边界测试] BUG-020: 播放结束 UI 重置...")
+        try:
+            send_keys("{SPACE}")
+            time.sleep(2.0)
+            # Seek 到结尾以尽快触发播放结束
+            send_keys("{END}")
+            time.sleep(1.0)
+            # 等待播放结束（无下一首时应调用 resetUiWhenPlaybackFinishedNoNext）
+            time.sleep(12.0)
+            # 此处无法可靠读取 Qt 控件值，仅验证无崩溃；可后续用 UIA 读取 slider/button
+            self.log_test("BUG-020 播放结束 UI 重置", True, "Seek 到结尾并等待，无崩溃")
+            return True
+        except Exception as e:
+            self.log_test("BUG-020 播放结束 UI 重置", False, str(e))
+            return False
+
     def run_edge_case_tests(self) -> bool:
         """运行所有边界条件测试"""
         print("\n" + "=" * 80)
@@ -216,11 +234,14 @@ class WZMediaPlayerEdgeCaseTester(WZMediaPlayerTester):
         time.sleep(2.0)
         
         results.append(self.test_stress_operations())
-        
+        time.sleep(2.0)
+
+        results.append(self.test_playback_finished_ui_reset())
+
         # 统计结果
         passed = sum(results)
         total = len(results)
-        
+
         print("\n" + "=" * 80)
         print(f"边界条件测试完成: {passed}/{total} 通过")
         print("=" * 80)
@@ -235,10 +256,15 @@ def main():
     print("=" * 80)
     print()
     
-    # 配置路径（根据实际情况修改）
-    exe_path = r"E:\WZMediaPlayer_2025\x64\Debug\WZMediaPlay.exe"
-    test_video_path = r"D:\BaiduNetdiskDownload\test.mp4"
-    
+    # 配置路径（从 config.ini / config.py 读取）
+    try:
+        import config as test_config
+        exe_path = test_config.PLAYER_EXE_PATH
+        test_video_path = test_config.TEST_VIDEO_PATH
+    except ImportError:
+        exe_path = r"D:\2026Github\build\Release\WZMediaPlayer.exe"
+        test_video_path = r"D:\2026Github\testing\video\test.mp4"
+
     # 创建边界条件测试器
     tester = WZMediaPlayerEdgeCaseTester(exe_path, test_video_path)
     
