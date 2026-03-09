@@ -511,12 +511,35 @@ void StereoOpenGLCommon::paintGLStereo()
             glActiveTexture(GL_TEXTURE0 + p);
             glBindTexture(GL_TEXTURE_2D, textures[p + 1]);
             if (logger && paintGLStereoCounter % 100 == 0) {
-                logger->debug("StereoOpenGLCommon::paintGLStereo: Bound texture {} to GL_TEXTURE{} (plane {})", 
+                logger->debug("StereoOpenGLCommon::paintGLStereo: Bound texture {} to GL_TEXTURE{} (plane {})",
                     textures[p + 1], p, p);
             }
         }
     }
     // 简化设计：不再使用硬件互操作，纹理已在上面绑定
+
+    // 关键修复：每次渲染时更新纹理 uniform（因为 numPlanes 可能在初始化后改变）
+    // 这解决了 stereo shader 在 numPlanes=0 时初始化导致纹理 uniform 设置错误的问题
+    shaderProgramStereo->setUniformValue("textureY", 0);
+    if (numPlanes == 2)
+    {
+        shaderProgramStereo->setUniformValue("textureUV", 1);
+        shaderProgramStereo->setUniformValue("textureU", -1);
+        shaderProgramStereo->setUniformValue("textureV", -1);
+    }
+    else if (numPlanes == 3)
+    {
+        shaderProgramStereo->setUniformValue("textureU", 1);
+        shaderProgramStereo->setUniformValue("textureV", 2);
+        shaderProgramStereo->setUniformValue("textureUV", -1);
+    }
+    else
+    {
+        // 单平面格式（RGB），只使用 textureY
+        shaderProgramStereo->setUniformValue("textureU", -1);
+        shaderProgramStereo->setUniformValue("textureV", -1);
+        shaderProgramStereo->setUniformValue("textureUV", -1);
+    }
     
     // fragment.glsl 不使用 uMatrix，vertex.glsl 也不使用，所以不需要设置
     // 如果需要矩阵变换，可以在 vertex shader 中添加
