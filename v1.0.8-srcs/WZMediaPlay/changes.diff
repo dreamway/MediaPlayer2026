@@ -1,0 +1,2617 @@
+diff --git a/WZMediaPlay/FFmpegView.cc b/WZMediaPlay/FFmpegView.cc
+deleted file mode 100644
+index fe1a2c9..0000000
+--- a/WZMediaPlay/FFmpegView.cc
++++ /dev/null
+@@ -1,1667 +0,0 @@
+-#include "FFmpegView.h"
+-#include "PlayController.h"
+-#include "GlobalDef.h"
+-#include "videoDecoder/ffmpeg.h"  // 包含 FFmpeg 类型定义
+-#include <libswscale/swscale.h>   // 用于 sws_scale
+-#include <libavutil/imgutils.h>   // 用于 av_frame_get_buffer
+-#include <iostream>
+-#include <QDateTime>
+-#include <QDebug>
+-#include <QMessageBox>
+-#include <QObject>
+-#include <QPainter>
+-#include <QSettings>
+-#include <QCoreApplication>
+-
+-#include <atomic>
+-#include <fstream>
+-#include <sstream>
+-#include <streambuf>
+-#include <string>
+-#include <QDir>
+-#include <QPixmap>
+-#include <QImage>
+-
+-#include "FloatButton.h"
+-#include "FullscreenTipsWidget.h"
+-#include "SubtitleWidget.h"
+-#include "spdlog/spdlog.h"
+-
+-FFmpegView::FFmpegView(QWidget *parent)
+-    : QOpenGLWidget(parent)
+-    , mCamera(nullptr)
+-{
+-    //直接将OK的shader放进resources，外部不放shader文件，直接导入，但若外部存在shader文件时，则替换掉原有的shader文件
+-    bool loadShaderOk = false;
+-    if (false == loadInternalShaders()) {
+-        logger->warn("loadInternalShaders failed.");
+-    } else {
+-        logger->info("loadInternalShaders ok.");
+-        loadShaderOk = true;
+-    }
+-
+-    bool loadExternalShaderOk = false;
+-    if (false == loadExternalShaders()) {
+-        logger->warn("loadExternalShaders failed.");
+-    } else {
+-        logger->info("loadExternalShaders ok.");
+-        loadExternalShaderOk = true;
+-    }
+-
+-    if (!loadShaderOk && loadExternalShaderOk) {
+-        logger->critical("ShaderInit Failed");
+-        return;
+-    }
+-
+-    //当读外部shader正常时，替换掉原有的内部shader
+-    if (loadExternalShaderOk) {
+-        vertexSource_ = externalVertexSource_;
+-        fragmentSource_ = externalFragmentSource_;
+-    }
+-
+-    //关联widgets初始化
+-    if (!butWidget) {
+-        butWidget = new FloatButton(this);
+-        butWidget->hide();
+-    }
+-
+-    if (!mWindowLogo) {
+-        mWindowLogo = new QLabel(this);
+-        mWindowLogPM.load(GlobalDef::getInstance()->PLAY_WINDOW_LOGO_PATH);
+-        mWindowLogo->resize(mWindowLogPM.size());
+-        mWindowLogo->setPixmap(mWindowLogPM);
+-    }
+-
+-    mFullscreenTipsWidget = new FullscreenTipsWidget(this);
+-    mFullscreenTipsWidget->move(QPoint(0, 0));
+-    mFullscreenTipsWidget->show();
+-
+-    mSubtitleWidget = new SubtitleWidget(this);
+-    mSubtitleWidget->move(QPoint(0, height() - mSubtitleFontHeight));
+-    mSubtitleWidget->resize(QSize(width(), mSubtitleFontHeight));
+-    mSubtitleWidget->show();
+-
+-    // 读取 ShowFPS 配置
+-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+-    QSettings setting(cfgPath, QSettings::IniFormat);
+-    QVariant variant = setting.value("/System/ShowFPS");
+-    mShowFPS = variant.isNull() ? false : variant.toBool();
+-    
+-    // 初始化 FPS 显示标签
+-    if (!mFPSLabel) {
+-        mFPSLabel = new QLabel(this);
+-        mFPSLabel->setStyleSheet(
+-            "QLabel {"
+-            "background-color: rgba(0, 0, 0, 150);"
+-            "color: #00FF00;"
+-            "font-size: 16px;"
+-            "font-weight: bold;"
+-            "padding: 4px 8px;"
+-            "border-radius: 4px;"
+-            "}"
+-        );
+-        mFPSLabel->setText("FPS: --");
+-        mFPSLabel->setAlignment(Qt::AlignCenter);
+-        mFPSLabel->resize(100, 30);
+-        mFPSLabel->show();  // 默认显示，根据配置隐藏
+-    }
+-    
+-    // 初始化 FPS 计算相关变量
+-    mLastFPSTime = std::chrono::steady_clock::now();
+-    mFPSCounter = 0;
+-    mCurrentFPS = 0.0f;
+-
+-    //默认3D渲染相关参数
+-    mStereoFormat = StereoFormat::STEREO_FORMAT_NORMAL_2D;
+-    mStereoInputFormat = StereoInputFormat::STEREO_INPUT_FORMAT_LR;
+-    mStereoOutputFormat = StereoOutputFormat::STEREO_OUTPUT_FORMAT_VERTICAL;
+-
+-    connect(&renderTimer, &QTimer::timeout, this, &FFmpegView::OnRenderTimer);
+-    connect(&mPlayStatusUpdateTimer, &QTimer::timeout, this, &FFmpegView::OnUpdateStatusTimer);
+-}
+-
+-FFmpegView::~FFmpegView()
+-{
+-    if (mWindowLogo) {
+-        delete mWindowLogo;
+-        mWindowLogo = nullptr;
+-    }
+-    if (butWidget) {
+-        delete butWidget;
+-        butWidget = nullptr;
+-    }
+-    
+-    if (mFPSLabel) {
+-        delete mFPSLabel;
+-        mFPSLabel = nullptr;
+-    }
+-
+-    if (renderTimer.isActive()) {
+-        renderTimer.stop();
+-    }
+-    if (mPlayStatusUpdateTimer.isActive()) {
+-        mPlayStatusUpdateTimer.stop();
+-    }
+-    if (mFullscreenTipsWidget) {
+-        delete mFullscreenTipsWidget;
+-        mFullscreenTipsWidget = nullptr;
+-    }
+-    if (mSubtitleWidget) {
+-        delete mSubtitleWidget;
+-        mSubtitleWidget = nullptr;
+-    }
+-}
+-
+-bool FFmpegView::loadInternalShaders()
+-{
+-    QFile vertexFile(":/MainWindow/Shader/vertex.glsl");
+-    if (!vertexFile.exists()) {
+-        logger->warn("internal vertex file not exists.");
+-        return false;
+-    }
+-    logger->info("internal vertex file exists");
+-    if (!vertexFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+-        logger->warn("internal vertex open failed.");
+-        return false;
+-    }
+-    QTextStream vertexIn(&vertexFile);
+-    vertexSource_.clear();
+-    vertexSource_ = vertexIn.readAll();
+-    logger->info("read internal VertexContent ok");
+-
+-    QFile fragmentFile(":/MainWindow/Shader/fragment.glsl");
+-    if (!fragmentFile.exists()) {
+-        logger->warn("internal fragment file not exists");
+-        return false;
+-    }
+-    logger->info("internal fragment file exists.");
+-    if (!fragmentFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+-        logger->warn("internal fragment open failed.");
+-        return false;
+-    }
+-    QTextStream fragIn(&fragmentFile);
+-    fragmentSource_.clear();
+-    fragmentSource_ = fragIn.readAll();
+-    logger->info("read internal fragmentContent ok");
+-
+-    return true;
+-}
+-
+-bool FFmpegView::loadExternalShaders()
+-{
+-    QFile vertexFile("./Shader/vertex.glsl");
+-    if (!vertexFile.exists()) {
+-        logger->warn("external vertex file not exists.");
+-        return false;
+-    }
+-    logger->info("external vertex file exists");
+-    if (!vertexFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+-        logger->warn("external vertex open failed.");
+-        return false;
+-    }
+-    QTextStream vertexIn(&vertexFile);
+-    externalVertexSource_.clear();
+-    externalVertexSource_ = vertexIn.readAll();
+-    logger->info("read ExternalVertexContent:");
+-    logger->info(externalVertexSource_.toUtf8().constData());
+-
+-    QFile fragmentFile("./Shader/fragment.glsl");
+-    if (!fragmentFile.exists()) {
+-        logger->warn("external fragment file not exists");
+-        return false;
+-    }
+-    logger->info("external fragment file exists.");
+-    if (!fragmentFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+-        logger->warn("external fragment open failed.");
+-        return false;
+-    }
+-    QTextStream fragIn(&fragmentFile);
+-    externalFragmentSource_.clear();
+-    externalFragmentSource_ = fragIn.readAll();
+-    logger->info("read external fragmentContent:");
+-    logger->info(externalFragmentSource_.toUtf8().constData());
+-
+-    return true;
+-}
+-
+-int FFmpegView::StartRendering(StereoFormat stereoFormat, StereoInputFormat stereoInputFormat, StereoOutputFormat stereoOutputFormat, float frameRate)
+-{
+-    logger->info(
+-        "startRendering with: format: {}, inputFormat:{}, outputFormat:{}, frameRate：{}",
+-        int(stereoFormat),
+-        int(stereoInputFormat),
+-        int(stereoOutputFormat),
+-        float(frameRate));
+-
+-    if (mWindowLogo) {
+-        mWindowLogo->hide();
+-    }
+-
+-    mStereoFormat = stereoFormat;
+-    mStereoInputFormat = stereoInputFormat;
+-    mStereoOutputFormat = stereoOutputFormat;
+-    elapsedInSeconds_ = 0;
+-
+-    // 初始化渲染健康检查 - 重置所有状态，确保新视频开始时是干净的状态
+-    mLastPaintGLTime = std::chrono::steady_clock::now();
+-    mRenderStallCounter = 0;
+-    
+-    // 重置 FPS 计数器
+-    mLastFPSTime = std::chrono::steady_clock::now();
+-    mFPSCounter = 0;
+-    mCurrentFPS = 0.0f;
+-    
+-    // 确保FPS标签在开始渲染时正确显示（如果配置启用）
+-    if (mFPSLabel && mShowFPS) {
+-        int labelWidth = 100;
+-        int labelHeight = 30;
+-        int margin = 10;
+-        int x = width() - labelWidth - margin;
+-        int y = margin;
+-        mFPSLabel->move(x, y);
+-        mFPSLabel->show();
+-        logger->debug("FPS label enabled and shown at start rendering");
+-    } else if (mFPSLabel) {
+-        mFPSLabel->hide();
+-        logger->debug("FPS label disabled");
+-    }
+-
+-    connect(&renderTimer, &QTimer::timeout, this, &FFmpegView::OnRenderTimer);
+-    connect(&mPlayStatusUpdateTimer, &QTimer::timeout, this, &FFmpegView::OnUpdateStatusTimer);
+-
+-    renderTimer.start(1000.0 / frameRate);
+-    mPlayStatusUpdateTimer.start(1000); //Update ProgressBar & timeElapsedUi every seconds
+-    
+-    // 强制触发一次更新，确保paintGL被调用，更新mLastPaintGLTime
+-    // 这对于从睡眠恢复或长时间播放后的视频切换很重要
+-    update();
+-
+-    //在经过文件名解析出对应的格式后，应该通知MainWindow将对应Action状态更新，以防前后视频变更后UI状态变乱
+-    logger->info(
+-        "emit stereoFormatChanged with Format: {},  inputFormat:{},  outputFormat:{}", int(mStereoFormat), int(mStereoInputFormat), int(mStereoOutputFormat));
+-    //emit stereoFormatChanged(mStereoFormat, mStereoInputFormat, mStereoOutputFormat);
+-
+-    pts_ = std::numeric_limits<int64_t>::min();
+-
+-    fps_ = frameRate;
+-
+-    logger->info("==========================>render time interval:{}", 1000.0 / frameRate);
+-    if (mSubtitleWidget && mLoadSubtitleSuccess) {
+-        mSubtitleWidget->Start();
+-    }
+-
+-    mIsRendering = true;
+-
+-    return 0;
+-}
+-
+-bool FFmpegView::IsRendering()
+-{
+-    return mIsRendering;
+-}
+-
+-void FFmpegView::OnRenderTimer()
+-{
+-    static int renderCounter = 0;
+-    renderCounter += 1;
+-    if (renderCounter % (int(fps_) / 2) == 0) {
+-        //防止打印过多信息，一秒打印两条
+-        logger->debug("000000----OnRenderTimer--------000000000000");
+-    }
+-
+-    // 渲染健康检查：如果paintGL太久没被调用，说明渲染可能停滞了
+-    auto now = std::chrono::steady_clock::now();
+-    auto timeSinceLastRender = std::chrono::duration_cast<std::chrono::milliseconds>(
+-        now - mLastPaintGLTime).count();
+-    
+-    // 如果超过3秒（3000ms）没有渲染，说明渲染线程可能停止了
+-    // 这可能是因为系统休眠、显示器关闭或OpenGL上下文失效
+-    const int64_t RENDER_STALL_THRESHOLD_MS = 3000;
+-    
+-    if (mIsRendering && timeSinceLastRender > RENDER_STALL_THRESHOLD_MS) {
+-        mRenderStallCounter++;
+-        if (mRenderStallCounter == 1 || mRenderStallCounter % 10 == 0) {
+-            // 第一次或每10次打印一次警告
+-            logger->warn("Render stall detected! Last paintGL was {}ms ago (threshold: {}ms). "
+-                        "This may be due to system sleep, display off, or OpenGL context loss. "
+-                        "Attempting recovery by forcing frame consumption...",
+-                        timeSinceLastRender, RENDER_STALL_THRESHOLD_MS);
+-        }
+-        
+-        // 尝试恢复：强制调用currentFrame()来推进队列，并强制触发重绘
+-        // 这样可以防止解码线程死锁，并尝试恢复渲染
+-        if (playController_ && !playController_->isStopped() && !playController_->isPaused()) {
+-            try {
+-                // 检查OpenGL上下文是否有效
+-                if (context() && context()->isValid()) {
+-                    // 强制获取并释放一帧，推进队列
+-                    auto frameData = playController_->getCurrentFrame();
+-                    if (frameData.first) {
+-                        logger->debug("Forced frame consumption during render stall, queue advanced");
+-                    }
+-                    // 强制触发重绘，尝试恢复渲染
+-                    // 使用QMetaObject::invokeMethod确保在主线程中执行
+-                    QMetaObject::invokeMethod(this, "update", Qt::QueuedConnection);
+-                } else {
+-                    logger->warn("OpenGL context invalid during render stall, cannot recover");
+-                }
+-            } catch (const std::exception& e) {
+-                logger->error("Exception during render stall recovery: {}", e.what());
+-            }
+-        }
+-    } else {
+-        // 渲染正常，重置计数器
+-        if (mRenderStallCounter > 0) {
+-            logger->info("Render stall recovered after {} attempts", mRenderStallCounter);
+-            mRenderStallCounter = 0;
+-        }
+-    }
+-
+-    update();
+-}
+-
+-void FFmpegView::OnUpdateStatusTimer()
+-{
+-    logger->debug("==updateStatus, elspedInSeconds:==> {}", elapsedInSeconds_);
+-    if (mEnableStereoRegion) {
+-        logger->info("OnUpdateStatusTimer, show Partial3D...");
+-        bool showOrHide = true;
+-        mFullscreenTipsWidget->SetRenderInfoWithoutTimer(showOrHide, QString(tr("局部3D")));
+-        mFullscreenTipsWidget->update();
+-    }
+-    else {
+-        bool showOrHide = false;
+-        mFullscreenTipsWidget->SetRenderInfoWithoutTimer(showOrHide, "");
+-        mFullscreenTipsWidget->update();
+-    }
+-
+-    if (mSeeking) {
+-        logger->info(" is Seeking, not need to updatePlayProgress.");
+-        return;
+-    }
+-
+-    emit updatePlayProcess(elapsedInSeconds_);
+-}
+-
+-bool FFmpegView::PlayPause(bool isPause)
+-{
+-    logger->info("FFmpegView::PlayPause, isPause? {}", isPause);
+-    if (playController_) {
+-        if (isPause) {
+-            playController_->pause();
+-        } else {
+-            playController_->play();
+-        }
+-    }
+-    if (mSubtitleWidget && mLoadSubtitleSuccess) {
+-        mSubtitleWidget->PlayPause(isPause);
+-    }
+-    return true;
+-}
+-
+-bool FFmpegView::StopRendering()
+-{
+-    logger->info("7777000 FFmpegView::StopRendering");
+-    mStereoFormat = STEREO_FORMAT_NORMAL_2D;
+-    mStereoInputFormat = STEREO_INPUT_FORMAT_LR;
+-    mStereoOutputFormat = STEREO_OUTPUT_FORMAT_VERTICAL;
+-
+-    logger->info(
+-        " disconnect & stop Timer. before disconnect&stop, the activate status: activate? {},  mPlayStatusUpdateTimer:{}",
+-        renderTimer.isActive(),
+-        mPlayStatusUpdateTimer.isActive());
+-    if (renderTimer.isActive()) {
+-        renderTimer.disconnect();
+-        renderTimer.stop();
+-    }
+-    if (mPlayStatusUpdateTimer.isActive()) {
+-        mPlayStatusUpdateTimer.disconnect();
+-        mPlayStatusUpdateTimer.stop();
+-    }
+-
+-    logger->info(
+-        " disconnect & stop Timer. after disconnect&stop, the activate status: activate?{}, mPlayStatusUpdateTimer:{}",
+-        renderTimer.isActive(),
+-        mPlayStatusUpdateTimer.isActive());
+-
+-    // 重置渲染停滞计数器，确保下次启动时是干净的状态
+-    mRenderStallCounter = 0;
+-    mLastPaintGLTime = std::chrono::steady_clock::now();
+-    
+-    // 隐藏 FPS 标签
+-    if (mFPSLabel) {
+-        mFPSLabel->hide();
+-    }
+-
+-    update();
+-    if (mWindowLogo) {
+-        mWindowLogo->show();
+-    }
+-    if (mSubtitleWidget) {
+-        mSubtitleWidget->Stop();
+-    }
+-
+-    mIsRendering = false;
+-
+-    return true;
+-}
+-
+-StereoFormat FFmpegView::SetStereoFormat(StereoFormat stereoFormat)
+-{
+-    mStereoFormat = stereoFormat;
+-    shaderSetInt(KEY_STEREO_FLAG, mStereoFormat);
+-    return mStereoFormat;
+-}
+-
+-StereoFormat FFmpegView::ToggleStereo(bool stereo_checked)
+-{
+-    logger->info(" mStereoFormat:{}, stereo_checked:{}", int(mStereoFormat), stereo_checked);
+-    if (stereo_checked) {
+-        mStereoFormat = StereoFormat::STEREO_FORMAT_3D;
+-
+-        shaderSetInt(KEY_STEREO_FLAG, STEREO_FORMAT_3D);
+-    } else {
+-        mStereoFormat = StereoFormat::STEREO_FORMAT_NORMAL_2D;
+-        shaderSetInt(KEY_STEREO_FLAG, STEREO_FORMAT_NORMAL_2D);
+-    }
+-    return mStereoFormat;
+-}
+-
+-StereoInputFormat FFmpegView::SetStereoInputFormat(StereoInputFormat inputFormat)
+-{
+-    if (inputFormat >= 3 or inputFormat < 0) {
+-        logger->warn("SetStereoInputFormat failed, inputFormat wrong:{}", int(inputFormat));
+-        return mStereoInputFormat;
+-    }
+-    logger->info("FFmpgView::SetStereoInputFormat, stereoInputFormat: {}", (int) inputFormat);
+-    mStereoInputFormat = inputFormat;
+-    shaderSetInt(KEY_STEREO_INPUT_FORMAT, (int) inputFormat);
+-    return mStereoInputFormat;
+-}
+-
+-bool FFmpegView::SetRenderInputSource(RenderInputSource ris)
+-{
+-    mRenderInputSource = ris;
+-    shaderSetInt(KEY_RENDER_INPUT_SOURCE, (int) ris);
+-    return true;
+-}
+-
+-StereoOutputFormat FFmpegView::SetStereoOutputFormat(StereoOutputFormat outputFormat)
+-{
+-    if (outputFormat >= 4 or outputFormat < 0) {
+-        logger->warn("SetStereoOutputFormat failed, outputFormat wrong:{}", int(outputFormat));
+-        return mStereoOutputFormat;
+-    }
+-    mStereoOutputFormat = outputFormat;
+-    shaderSetInt(KEY_STEREO_OUTPUT_FORMAT, (int) outputFormat);
+-    return mStereoOutputFormat;
+-}
+-
+-StereoOutputFormat FFmpegView::GetStereoOutputFormat()
+-{
+-    return mStereoOutputFormat;
+-}
+-
+-bool FFmpegView::SetStereoEnableRegion(bool enabled, int tlX, int tlY, int brX, int brY)
+-{
+-    if (enabled) {
+-        shaderSetBool(KEY_ENABLE_REGION, true);
+-        logger->info("SetStereoEnableRegion, tx:{},ty:{}, brX:{}, bry:{}, width:{}, height:{}", tlX, tlY, brX, brY, width(), height());
+-        float vecTopLeftX = tlX / float(width());
+-        float vecBottomRightX = brX / float(width());
+-
+-        //Y轴坐标需要转换，以便UI选择的坐标系与实际渲染坐标系选择对齐 (按比例对齐,并减去可能的上下黑边)
+-        float compressHeight = (texHeight / float(texWidth)) * viewWidth;
+-        int topMargin = int(0.5 * (viewHeight - compressHeight));
+-        int stereoTLY = tlY - topMargin;
+-        if (stereoTLY < 0) {
+-            stereoTLY = 0;
+-        }
+-        int stereoBRY = brY - topMargin;
+-        if (stereoBRY > compressHeight) {
+-            stereoBRY = compressHeight;
+-        }
+-
+-        float vecTopLeftY = stereoTLY / compressHeight;
+-        float vecBottomRightY = stereoBRY / compressHeight;
+-
+-        logger->info("SetStereoEnableRegion, vecTopleft({}x{}) vecBottomRight({}x{})", vecTopLeftX, vecTopLeftY, vecBottomRightX, vecBottomRightY);
+-        shaderSetRect(KEY_VEC_REGION, vecTopLeftX, vecTopLeftY, vecBottomRightX, vecBottomRightY);
+-        mEnableStereoRegion = true;
+-        vecStereoRegion[0] = vecTopLeftX;
+-        vecStereoRegion[1] = vecTopLeftY;
+-        vecStereoRegion[2] = vecBottomRightX;
+-        vecStereoRegion[3] = vecBottomRightY;
+-        mStereoFormat = STEREO_FORMAT_3D;
+-        SetFullscreenMode(FULLSCREEN_PLUS_STRETCH);
+-    } else {
+-        shaderSetBool(KEY_ENABLE_REGION, false);
+-        mEnableStereoRegion = false;
+-        vecStereoRegion[0] = 0.0;
+-        vecStereoRegion[1] = 0.0;
+-        vecStereoRegion[2] = 1.0;
+-        vecStereoRegion[3] = 1.0;
+-    }
+-
+-    return true;
+-}
+-
+-bool FFmpegView::CancelStereoRegion()
+-{
+-    shaderSetBool(KEY_ENABLE_REGION, false);
+-    mEnableStereoRegion = false;
+-    vecStereoRegion[0] = 0.0;
+-    vecStereoRegion[1] = 0.0;
+-    vecStereoRegion[2] = 1.0;
+-    vecStereoRegion[3] = 1.0;
+-
+-    return true;
+-}
+-
+-void FFmpegView::IncreaseParallax()
+-{
+-    if (mParallaxShift >= GlobalDef::getInstance()->MAX_ALLOW_ADJUST_PARALLAX) {
+-        logger->warn("IncreaseParallax failed, exceeds max:{}", GlobalDef::getInstance()->MAX_ALLOW_ADJUST_PARALLAX);
+-        return;
+-    }
+-    mParallaxShift += 2;
+-
+-    ratio = -1; //重置ratio以便Render的时候，能够进到r!=ratio分支进行实际的parallaxShift修改
+-    logger->info("parallaxShift:{} ", mParallaxShift);
+-    update();
+-}
+-
+-void FFmpegView::DecreaseParallax()
+-{
+-    if (mParallaxShift <= GlobalDef::getInstance()->MIN_ALLOW_ADJUST_PARALLAX) {
+-        logger->warn("DecreaseParallax failed, exceeds min:{}", GlobalDef::getInstance()->MIN_ALLOW_ADJUST_PARALLAX);
+-        return;
+-    }
+-    mParallaxShift -= 2;
+-
+-    ratio = -1; //重置ratio以便Render的时候，能够进到r!=ratio分支进行实际的parallaxShift修改
+-    logger->info("parallaxShift:{} ", mParallaxShift);
+-    update();
+-}
+-
+-void FFmpegView::ResetParallax()
+-{
+-    mParallaxShift = 0;
+-
+-    ratio = -1; //重置ratio以便Render的时候，能够进到r!=ratio分支进行实际的parallaxShift修改
+-    logger->info("parallaxShift:{} ", mParallaxShift);
+-    update();
+-}
+-
+-
+-
+-void FFmpegView::SetPlayController(PlayController *controller)
+-{
+-    playController_ = controller;
+-    // 如果 controller 不为空，连接信号
+-    if (playController_) {
+-        connect(playController_, &PlayController::playStateChanged,
+-                this, &FFmpegView::onPlayStateChanged);
+-    }
+-}
+-
+-bool FFmpegView::TakeScreenshot()
+-{
+-    QString savedFilePath;
+-    QString screenShotRootFolder = GlobalDef::getInstance()->SCREENSHOT_DIR;
+-    bool screenShotOK = SaveImage(screenShotRootFolder, savedFilePath);
+-    if (screenShotOK) {
+-        QMessageBox::information(this, QString(tr("截图成功")), QString(tr("截图保存已存成文件：%1")).arg(savedFilePath));
+-        return true;
+-    }
+-    return false;
+-}
+-
+-void FFmpegView::keyPressEvent(QKeyEvent *event)
+-{
+-    QKeyCombination keyCombination = event->keyCombination();
+-
+-    switch (keyCombination.keyboardModifiers()) {
+-    case Qt::ControlModifier: {
+-        switch (keyCombination.key()) {
+-        //case Qt::Key_W: {
+-        //    //视差调节
+-        //    if (GlobalDef::getInstance()->mRunningMode == RunningMode::RM_PRO) {
+-        //        IncreaseParallax();
+-        //    }
+-        //} break;
+-        //case Qt::Key_E: {
+-        //    //视差调节
+-        //    if (GlobalDef::getInstance()->mRunningMode == RunningMode::RM_PRO) {
+-        //        DecreaseParallax();
+-        //    }
+-        //} break;
+-        //case Qt::Key_R: {
+-        //    //视差调节
+-        //    if (GlobalDef::getInstance()->mRunningMode == RunningMode::RM_PRO) {
+-        //        ResetParallax();
+-        //    }
+-        //} break;
+-        //case Qt::Key_N: {
+-        //    if (GlobalDef::getInstance()->mRunningMode == RunningMode::RM_PRO) {
+-        //        TakeScreenshot();
+-        //    }
+-        //} break;
+-        case Qt::Key_M: {
+-            if (GlobalDef::getInstance()->mRunningMode == RunningMode::RM_PRO) {
+-                ToggleViewParallaxSideStrip();
+-            }
+-        } break;
+-        default:
+-            break;
+-        }
+-    } break;
+-    default:
+-        break;
+-    }
+-}
+-
+-void FFmpegView::ToggleViewParallaxSideStrip()
+-{
+-    mEnableStripParallaxSideView = !mEnableStripParallaxSideView;
+-    logger->info("!!!!!!!Parallax Adjustment. mEnableStripParallaxSideView:{}", mEnableStripParallaxSideView);
+-    update();
+-}
+-
+-void FFmpegView::initializeGL()
+-{
+-    //////////////////////////////////////////////////////////////////////
+-    //  3D play
+-
+-    initializeOpenGLFunctions();
+-
+-    glGenVertexArrays(1, &VAO);
+-    glGenBuffers(1, &VBO);
+-    glGenBuffers(1, &EBO);
+-    glBindVertexArray(VAO);
+-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices1), vertices1, GL_DYNAMIC_DRAW);
+-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(glIndices), glIndices, GL_STATIC_DRAW);
+-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), 0);
+-    glEnableVertexAttribArray(0);
+-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *) (3 * sizeof(float)));
+-    glEnableVertexAttribArray(1);
+-
+-    glGenTextures(3, texs);
+-    for (int i = 0; i < 3; i++) {
+-        glBindTexture(GL_TEXTURE_2D, texs[i]);
+-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+-    }
+-
+-    if (false == shaderInit(vertexSource_, fragmentSource_)) {
+-        logger->critical("shaderInit failed.");
+-        return;
+-    }
+-    logger->info("shaderInit ok");
+-
+-    shaderUse();
+-    shaderSetInt("textureY", 0);
+-    shaderSetInt("textureU", 1);
+-    shaderSetInt("textureV", 2);
+-    shaderSetInt("textureUV", 3);
+-}
+-
+-void FFmpegView::resizeEvent(QResizeEvent *e)
+-{
+-    QOpenGLWidget::resizeEvent(e);
+-    
+-    // 更新 FPS 标签位置（右上角）
+-    if (mFPSLabel && mShowFPS) {
+-        int labelWidth = 100;
+-        int margin = 10;
+-        int x = width() - labelWidth - margin;
+-        int y = margin;
+-        mFPSLabel->move(x, y);
+-    }
+-}
+-
+-void FFmpegView::moveEvent(QMoveEvent *event)
+-{
+-    if (event == nullptr) {
+-        return;
+-    }
+-
+-    const int MahattenLengthCheckForDiffMoveAction = 4;
+-    // （本窗体相对父窗体+父窗体） 在全局中的位置
+-    QPoint gpt = this->mapToGlobal(mapToParent(pos()) + parentWidget()->pos());
+-    logger->info(
+-        "FFmpegView::moveEvent, pos:{}x{}, mapToParent:{}x{}, parentPos:{}x{} gpt: {}x{}",
+-        pos().x(),
+-        pos().y(),
+-        mapToParent(pos()).x(),
+-        mapToParent(pos()).y(),
+-        parentWidget()->pos().x(),
+-        parentWidget()->pos().y(),
+-        gpt.x(),
+-        gpt.y());
+-
+-    if (gpt.x() % 2 != 0 || gpt.y() % 2 != 0) {
+-        QPoint pointDiff = gpt - mLastGpt;
+-        logger->warn(
+-            "!!FFmpegView. moveEvent origin %2 != 0, render may Failed. ori: {}x{}, with the last point{},{}, manhattenLength:{}",
+-            gpt.x(),
+-            gpt.y(),
+-            mLastGpt.x(),
+-            mLastGpt.y(),
+-            pointDiff.manhattanLength());
+-        if (pointDiff.manhattanLength() > MahattenLengthCheckForDiffMoveAction) {
+-            logger->info("FFmpegView.moveEvent, gpt:{}x{} will be a new moveMent, lastGpt:{}x{}, update lastGpt", gpt.x(), gpt.y(), mLastGpt.x(), mLastGpt.y());
+-        } else {
+-            logger->warn(
+-                "FFmpegView.moveEvent, gpt:{}x{} is the same movement, lastGpt:{}x{}, No need to update lastGpt", gpt.x(), gpt.y(), mLastGpt.x(), mLastGpt.y());
+-            return;
+-        }
+-
+-        // 若需要修正，则仅修正当前窗体的位置
+-        QPoint oldPos = this->pos();
+-        QPoint newPos = oldPos;
+-        if (gpt.x() % 2 != 0) {
+-            int shiftX = mMinorShiftXForRightStereo == 1 ? -1 : 1;
+-            newPos = QPoint(oldPos.x() + shiftX, oldPos.y());
+-            logger->info("gpt.x()%2=={} (!=0), oldPos:{}x{}, newPos update:{}x{}", gpt.x() % 2, oldPos.x(), oldPos.y(), newPos.x(), newPos.y());
+-            mMinorShiftXForRightStereo = shiftX;
+-        }
+-        if (gpt.y() % 2 != 0) {
+-            int shiftY = mMinorShiftYForRightStereo == 1 ? -1 : 1;
+-            newPos = QPoint(newPos.x(), newPos.y() + shiftY);
+-            logger->info("gpt.y()%2=={} (!=0), newPos update:{}x{}", gpt.y() % 2, newPos.x(), newPos.y());
+-            mMinorShiftYForRightStereo = shiftY;
+-        }
+-        QPoint newgpt = this->mapToGlobal(mapToParent(newPos) + parentWidget()->pos());
+-        logger->warn(
+-            "!!!moveEvent, oldPos:{}x{}, newPos:{}x{}, oldGPT: {}x{} => newGPT:{}x{} SHOULD BE EVEN",
+-            oldPos.x(),
+-            oldPos.y(),
+-            newPos.x(),
+-            newPos.y(),
+-            gpt.x(),
+-            gpt.y(),
+-            newgpt.x(),
+-            newgpt.y());
+-        mLastGpt = newgpt;
+-
+-        logger->info(
+-            "Finished, !! Move to NewPos:{}x{}, oldPos:{}x{}, lastGpt changed:{}x{}, mMinorSfhitXForRightStereo:{}, mMinorShiftYForRightStereo:{}",
+-            newPos.x(),
+-            newPos.y(),
+-            oldPos.x(),
+-            oldPos.y(),
+-            mLastGpt.x(),
+-            mLastGpt.y(),
+-            mMinorShiftXForRightStereo,
+-            mMinorShiftYForRightStereo);
+-        this->move(newPos);
+-    }
+-
+-    //#if 0
+-    //    QOpenGLWidget::moveEvent(event);
+-    //#endif
+-}
+-
+-void FFmpegView::paintEvent(QPaintEvent *e)
+-{
+-    QOpenGLWidget::paintEvent(e);
+-    
+-    // 更新 FPS 标签位置（右上角）和显示状态
+-    if (mFPSLabel && mShowFPS) {
+-        int labelWidth = 100;
+-        int labelHeight = 30;
+-        int margin = 10;
+-        int x = width() - labelWidth - margin;
+-        int y = margin;
+-        mFPSLabel->move(x, y);
+-        mFPSLabel->show();
+-    } else if (mFPSLabel) {
+-        mFPSLabel->hide();
+-    }
+-}
+-
+-void FFmpegView::resizeGL(int w, int h)
+-{
+-    if (butWidget) {
+-        butWidget->move((width() - butWidget->width()), (height() - butWidget->height()) / 2);
+-    }
+-    if (mSubtitleWidget) {
+-        mSubtitleWidget->move(QPoint(0, height() - mSubtitleFontHeight));
+-        mSubtitleWidget->resize(width(), mSubtitleFontHeight);
+-    }
+-
+-    if (mWindowLogo) {
+-        mWindowLogo->move((width() - mWindowLogo->width()) / 2, (height() - mWindowLogo->height()) / 2);
+-    }
+-
+-    viewWidth = w;
+-    viewHeight = h;
+-    QOpenGLWidget::resizeGL(w, h);
+-    glViewport(0, 0, w, h);
+-}
+-
+-void FFmpegView::paintGL()
+-{
+-    // 更新最后渲染时间，用于健康检查
+-    mLastPaintGLTime = std::chrono::steady_clock::now();
+-    
+-    // 计算 FPS
+-    // FPS 计算和显示（在paintGL中，每次渲染都会调用）
+-    if (mShowFPS && mFPSLabel) {
+-        mFPSCounter++;
+-        auto now = std::chrono::steady_clock::now();
+-        
+-        // 初始化时间戳（首次调用）
+-        if (mLastFPSTime.time_since_epoch().count() == 0) {
+-            mLastFPSTime = now;
+-            mFPSCounter = 0;
+-        }
+-        
+-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - mLastFPSTime).count();
+-        
+-        // 每秒更新一次 FPS
+-        if (elapsed >= 1000) {
+-            mCurrentFPS = (mFPSCounter * 1000.0f) / elapsed;
+-            mFPSCounter = 0;
+-            mLastFPSTime = now;
+-            
+-            // 更新 FPS 标签文本
+-            mFPSLabel->setText(QString("FPS: %1").arg(mCurrentFPS, 0, 'f', 1));
+-            // 确保标签可见且位置正确
+-            if (!mFPSLabel->isVisible()) {
+-                int labelWidth = 100;
+-                int margin = 10;
+-                int x = width() - labelWidth - margin;
+-                int y = margin;
+-                mFPSLabel->move(x, y);
+-                mFPSLabel->show();
+-            }
+-            logger->info("Rendering FPS updated: {}", mCurrentFPS);
+-        }
+-    }
+-    
+-    static int renderCounter = 0;
+-    renderCounter += 1;
+-    if (renderCounter >= 100000) {
+-        renderCounter = 0;
+-    }
+-    if (renderCounter % 30 == 0) {
+-        //适配于硬件，渲染时OpenGLWidget的原点应均为偶数
+-
+-        //TEST: 检测全局坐标数值是否对
+-        //QPoint gpt = this->mapToGlobal(pos());
+-        //if (gpt.x() % 2 != 0 || gpt.y() % 2 != 0) {
+-        //    logger->warn("!! GLView origin %2 != 0, render may Failed. ori: {}x{}", gpt.x(), gpt.y());
+-        //}
+-    }
+-    
+-    // 检查OpenGL上下文是否有效
+-    if (!context() || !context()->isValid()) {
+-        logger->warn("OpenGL context is invalid in paintGL, skipping render");
+-        return;
+-    }
+-
+-    //QPoint gpt = this->mapToGlobal(pos());
+-    //if (gpt.x() % 2 != 0 || gpt.y()%2 != 0) {
+-    //    logger->warn("!!! CHECK!!!!! GLView origin %2 != 0, render may Failed. ori: {}x{}", gpt.x(), gpt.y());
+-    //    QPoint oldPos = this->pos();
+-    //    QPoint newPos = oldPos;
+-    //    if (oldPos.x() % 2 != 0) {
+-    //        newPos = QPoint(oldPos.x()+1, oldPos.y());
+-    //    }
+-    //    if (oldPos.y() % 2 != 0) {
+-    //        newPos = QPoint(newPos.x(), newPos.y() + 1);
+-    //    }
+-    //    QPoint newgpt = this->mapToGlobal(newPos);
+-    //    logger->warn("!!! CHECK!!!!! GLView origin %2 != 0, render may Failed. ori: {}x{} SHOULD BE EVEN", newgpt.x(), newgpt.y());
+-    //}
+-
+-    if (mRenderInputSource == RenderInputSource::RIS_VIDEO_FILE) {
+-        //  3D play for VideoFile
+-        // 添加超时机制获取帧，避免UI线程阻塞
+-        std::pair<AVFrame *, int64_t> frameData = {nullptr, 0};
+-        
+-        if (playController_ && !playController_->isStopped()) {
+-            // 注意：QOpenGLWidget的paintGL已经自动调用了makeCurrent()
+-            // 我们只需要检查上下文是否有效
+-            if (!context() || !context()->isValid()) {
+-                logger->warn("OpenGL context invalid, cannot render frame");
+-                return;
+-            }
+-            
+-            try {
+-                frameData = playController_->getCurrentFrame();
+-            } catch (const std::exception& e) {
+-                logger->error("Exception in currentFrame(): {}", e.what());
+-                return;
+-            }
+-            
+-            // 保存取帧后的图片（用于调试黑画面问题）
+-            static int debugFrameCounter = 0;
+-            static QDateTime lastDebugSaveTime;
+-            auto now = QDateTime::currentDateTime();
+-            bool shouldSaveDebugFrame = false;
+-            
+-            // 每5秒保存一次，或者遇到无效帧时保存
+-            if (lastDebugSaveTime.isNull() || 
+-                lastDebugSaveTime.msecsTo(now) > 5000 ||
+-                !frameData.first || frameData.first->width == 0 || frameData.first->height == 0) {
+-                shouldSaveDebugFrame = true;
+-                lastDebugSaveTime = now;
+-            }
+-            
+-            if (shouldSaveDebugFrame && frameData.first) {
+-                QString debugDir = "debug_frames_render";
+-                if (!QDir::current().exists(debugDir)) {
+-                    QDir::current().mkdir(debugDir);
+-                }
+-                
+-                QString filename = QString("%1/frame_after_getCurrentFrame_%2_%3x%4_%5.png")
+-                    .arg(debugDir)
+-                    .arg(now.toString("yyyyMMdd_HHmmss"))
+-                    .arg(frameData.first->width)
+-                    .arg(frameData.first->height)
+-                    .arg(debugFrameCounter++);
+-                
+-                // 保存帧（使用 video.cc 中的 saveYUV420PFrameAsPNG 函数）
+-                // 注意：这里需要包含 video.cc 中的函数，或者在这里实现一个简化版本
+-                if (frameData.first->format == AV_PIX_FMT_YUV420P || frameData.first->format == AV_PIX_FMT_YUVJ420P) {
+-                    // 创建RGB帧用于转换
+-                    AVFrame* rgbFrame = av_frame_alloc();
+-                    if (rgbFrame) {
+-                        rgbFrame->format = AV_PIX_FMT_RGB24;
+-                        rgbFrame->width = frameData.first->width;
+-                        rgbFrame->height = frameData.first->height;
+-                        
+-                        if (av_frame_get_buffer(rgbFrame, 0) >= 0) {
+-                            SwsContext* swsCtx = sws_getContext(
+-                                frameData.first->width, frameData.first->height, AV_PIX_FMT_YUV420P,
+-                                frameData.first->width, frameData.first->height, AV_PIX_FMT_RGB24,
+-                                SWS_BILINEAR, nullptr, nullptr, nullptr);
+-                            
+-                            if (swsCtx) {
+-                                sws_scale(swsCtx, 
+-                                         frameData.first->data, frameData.first->linesize, 0, frameData.first->height,
+-                                         rgbFrame->data, rgbFrame->linesize);
+-                                
+-                                QImage img(rgbFrame->data[0], rgbFrame->width, rgbFrame->height, 
+-                                          rgbFrame->linesize[0], QImage::Format_RGB888);
+-                                img.save(filename, "PNG", 100);
+-                                
+-                                logger->info("Saved debug frame (after getCurrentFrame) to: {}", filename.toStdString());
+-                                
+-                                sws_freeContext(swsCtx);
+-                            }
+-                            av_frame_free(&rgbFrame);
+-                        }
+-                    }
+-                }
+-            }
+-            
+-            // 如果获取不到有效帧，记录日志但不直接返回，尝试继续渲染流程
+-            // 这样可以确保队列能够继续推进，防止死锁
+-            if (!frameData.first || frameData.first->width == 0 || frameData.first->height == 0) {
+-                static int invalidFrameCounter = 0;
+-                invalidFrameCounter++;
+-                if (invalidFrameCounter % 30 == 0) {  // 每30次无效帧才打印一次，避免日志过多
+-                    logger->debug("Invalid frame data (count:{}), frame ptr:{}, width:{}, height:{}", 
+-                                invalidFrameCounter, 
+-                                (void*)frameData.first,
+-                                frameData.first ? frameData.first->width : 0,
+-                                frameData.first ? frameData.first->height : 0);
+-                }
+-                // 即使帧无效，也不立即返回，继续执行下面的逻辑
+-                // 这样确保即使遇到无效帧，currentFrame()也会推进队列，防止死锁
+-                // 但我们需要确保下面的代码能处理空帧的情况
+-                if (!frameData.first) {
+-                    return;  // 只有帧指针为空时才返回，其他情况继续处理
+-                }
+-            }
+-        } else {
+-            logger->debug("Movie is stopped or null, skipping render");
+-            return;
+-        }
+-        
+-        auto [frame, pts] = frameData;
+-        
+-        // 再次检查frame是否为nullptr（防御性编程）
+-        if (!frame) {
+-            logger->warn("FFmpegView::OnRenderTimer: frame is nullptr after frameData");
+-            return;
+-        }
+-        
+-        shaderSetInt(KEY_STEREO_FLAG, mStereoFormat);
+-        if (mStereoFormat == StereoFormat::STEREO_FORMAT_3D) {
+-            //在每帧渲染的时候设置格式，修复部分情况切换不生效的情况
+-            shaderSetInt(KEY_STEREO_INPUT_FORMAT, (int) mStereoInputFormat);
+-            shaderSetInt(KEY_STEREO_OUTPUT_FORMAT, (int) mStereoOutputFormat);
+-
+-            shaderSetInt(KEY_PARALLAX_SHIFT, mParallaxShift);
+-            if (mEnableStereoRegion) {
+-                shaderSetBool(KEY_ENABLE_REGION, mEnableStereoRegion);
+-                shaderSetRect(KEY_VEC_REGION, vecStereoRegion[0], vecStereoRegion[1], vecStereoRegion[2], vecStereoRegion[3]);
+-            } else {
+-                shaderSetBool(KEY_ENABLE_REGION, false);
+-                shaderSetRect(KEY_VEC_REGION, vecStereoRegion[0], vecStereoRegion[1], vecStereoRegion[2], vecStereoRegion[3]);
+-            }
+-        }
+-
+-        // 验证帧的有效性（防止崩溃）
+-        if (frame->format == AV_PIX_FMT_NONE || frame->format == -1 || 
+-            frame->width <= 0 || frame->height <= 0 || 
+-            !frame->data[0]) {
+-            logger->warn("FFmpegView::OnRenderTimer: Invalid frame data, format={}, width={}, height={}, data[0]={}", 
+-                        frame->format, frame->width, frame->height, (void*)frame->data[0]);
+-            return;  // 跳过无效帧，避免崩溃
+-        }
+-        
+-        // 保存渲染前的图片（用于调试黑画面问题）
+-        static int debugRenderCounter = 0;
+-        static QDateTime lastRenderDebugSaveTime;
+-        auto renderNow = QDateTime::currentDateTime();
+-        bool shouldSaveRenderDebug = false;
+-        
+-        // 每5秒保存一次，或者遇到无效帧时保存
+-        if (lastRenderDebugSaveTime.isNull() || 
+-            lastRenderDebugSaveTime.msecsTo(renderNow) > 5000 ||
+-            frame->format == -1 || frame->width == 0 || frame->height == 0) {
+-            shouldSaveRenderDebug = true;
+-            lastRenderDebugSaveTime = renderNow;
+-        }
+-        
+-        if (shouldSaveRenderDebug && (frame->format == AV_PIX_FMT_YUV420P || frame->format == AV_PIX_FMT_YUVJ420P)) {
+-            QString debugDir = "debug_frames_render";
+-            if (!QDir::current().exists(debugDir)) {
+-                QDir::current().mkdir(debugDir);
+-            }
+-            
+-            QString filename = QString("%1/frame_before_render_%2_%3x%4_%5.png")
+-                .arg(debugDir)
+-                .arg(renderNow.toString("yyyyMMdd_HHmmss"))
+-                .arg(frame->width)
+-                .arg(frame->height)
+-                .arg(debugRenderCounter++);
+-            
+-            // 保存帧
+-            AVFrame* rgbFrame = av_frame_alloc();
+-            if (rgbFrame) {
+-                rgbFrame->format = AV_PIX_FMT_RGB24;
+-                rgbFrame->width = frame->width;
+-                rgbFrame->height = frame->height;
+-                
+-                if (av_frame_get_buffer(rgbFrame, 0) >= 0) {
+-                    SwsContext* swsCtx = sws_getContext(
+-                        frame->width, frame->height, AV_PIX_FMT_YUV420P,
+-                        frame->width, frame->height, AV_PIX_FMT_RGB24,
+-                        SWS_BILINEAR, nullptr, nullptr, nullptr);
+-                    
+-                    if (swsCtx) {
+-                        sws_scale(swsCtx, 
+-                                 frame->data, frame->linesize, 0, frame->height,
+-                                 rgbFrame->data, rgbFrame->linesize);
+-                        
+-                        QImage img(rgbFrame->data[0], rgbFrame->width, rgbFrame->height, 
+-                                  rgbFrame->linesize[0], QImage::Format_RGB888);
+-                        img.save(filename, "PNG", 100);
+-                        
+-                        logger->info("Saved debug frame (before render) to: {}", filename.toStdString());
+-                        
+-                        sws_freeContext(swsCtx);
+-                    }
+-                    av_frame_free(&rgbFrame);
+-                }
+-            }
+-        }
+-        
+-        mPixelFormat = frame->format;
+-        switch (mPixelFormat) {
+-        case AV_PIX_FMT_YUV420P:
+-        case AV_PIX_FMT_YUVJ420P:
+-            pts_ = pts;
+-            glClear(GL_COLOR_BUFFER_BIT);
+-            programDraw(frame->width, frame->height, frame->data, frame->linesize);
+-            break;
+-        default:
+-            logger->warn("Unsupported PixelFormat:{}", mPixelFormat);
+-            break;
+-        }
+-
+-        elapsedInSeconds_ = int64_t(qRound(pts / (1000.0 * 1000 * 1000)));
+-    } else if (mRenderInputSource == RenderInputSource::RIS_CAMERA) {
+-        cameraFrameDraw(mCameraImage.width(), mCameraImage.height());
+-    } else {
+-        logger->warn("Unsupported RenderInputSource");
+-    }
+-}
+-
+-void FFmpegView::enterEvent(QEnterEvent *e)
+-{
+-    if (butWidget) {
+-        butWidget->show();
+-    }
+-}
+-
+-void FFmpegView::leaveEvent(QEvent *e)
+-{
+-    if (butWidget) {
+-        butWidget->hide();
+-    }
+-}
+-
+-bool FFmpegView::shaderInit(const char *vertexSource, const char *fragmentSource)
+-{
+-    bool b_vertex = m_shaderProgram.addShaderFromSourceCode(QOpenGLShader::Vertex, vertexSource);
+-    bool b_fragment = m_shaderProgram.addShaderFromSourceCode(QOpenGLShader::Fragment, fragmentSource);
+-    bool b_link = m_shaderProgram.link();
+-    if (b_vertex && b_fragment && b_link) {
+-        logger->info(
+-            "create/compile vertex shader program, success?:{},create/compiple fragment shader program, success?:{},link shader program, success?:{} ",
+-            b_vertex,
+-            b_fragment,
+-            b_link);
+-        return true;
+-    }
+-    logger->error(
+-        "create/compile vertex shader program, success?:{},create/compiple fragment shader program, success?:{},link shader program, success?:{} ",
+-        b_vertex,
+-        b_fragment,
+-        b_link);
+-    return false;
+-}
+-
+-bool FFmpegView::shaderInit(QString &vertexSource, QString &fragmentSource)
+-{
+-    bool b_vertex = m_shaderProgram.addShaderFromSourceCode(QOpenGLShader::Vertex, vertexSource);
+-    bool b_fragment = m_shaderProgram.addShaderFromSourceCode(QOpenGLShader::Fragment, fragmentSource);
+-    bool b_link = m_shaderProgram.link();
+-    if (b_vertex && b_fragment && b_link) {
+-        logger->info(
+-            "create/compile vertex shader program, success?:{},create/compiple fragment shader program, success?:{},link shader program, success?:{} ",
+-            b_vertex,
+-            b_fragment,
+-            b_link);
+-        return true;
+-    }
+-    logger->error(
+-        "create/compile vertex shader program, success?:{},create/compiple fragment shader program, success?:{},link shader program, success?:{} ",
+-        b_vertex,
+-        b_fragment,
+-        b_link);
+-    return false;
+-}
+-
+-void FFmpegView::shaderUse()
+-{
+-    bool b_bind = m_shaderProgram.bind();
+-    logger->debug("shaderUse, m_shaderProgram bind, success?: {}", b_bind);
+-}
+-
+-void FFmpegView::shaderSetBool(const std::string &name, bool value)
+-{
+-    bool b_bind = m_shaderProgram.bind();
+-    m_shaderProgram.setUniformValue(name.c_str(), (int) value);
+-}
+-
+-void FFmpegView::shaderSetInt(const std::string &name, int value)
+-{
+-    bool b_bind = m_shaderProgram.bind();
+-    m_shaderProgram.setUniformValue(name.c_str(), value);
+-}
+-
+-void FFmpegView::shaderSetRect(const std::string &name, float topLeftX, float topLeftY, float bottomRightX, float bottomRightY)
+-{
+-    bool b_bind = m_shaderProgram.bind();
+-
+-    //将原窗口的坐标系转换成OpenGL 渲染坐标系
+-    logger->debug("name:{}, tl:{}x{}, br:{}x{}", name, topLeftX, topLeftY, bottomRightX, bottomRightY);
+-    //Should be Topleft & BottomRight
+-    m_shaderProgram.setUniformValue(name.c_str(), GLfloat(topLeftX), GLfloat(topLeftY), GLfloat(bottomRightX), GLfloat(bottomRightY));
+-}
+-
+-void FFmpegView::programDraw(int width, int height, uint8_t **data, int *linesize)
+-{
+-    bool changed = false;
+-
+-    if (texWidth != width) {
+-        texWidth = width;
+-        changed = true;
+-    }
+-    if (texHeight != height) {
+-        texHeight = height;
+-        changed = true;
+-    }
+-
+-    float tr = (float) texWidth / texHeight;
+-    float vr = (float) viewWidth / viewHeight;
+-    float r = tr / vr;
+-    static int drawCounter = 0;
+-    drawCounter++;
+-    if (drawCounter % 10 == 0) {
+-        logger->debug("GLManager::draw frameWidth:{}x{}, textureSize:{}x{}, draw tr:{}, vr:{}, r:{}", width, height, texWidth, texHeight, tr, vr, r);
+-    }
+-
+-    if (r != ratio) {
+-        ratio = r;
+-        std::vector<float> vertices;
+-        // clang-format off
+-        if (tr > vr) {
+-            // 上下边界不渲染，即保持原背景效果，
+-            float p = vr / tr;
+-
+-            vertices = {
+-                1.0,  p, 0.0,     1.0, 0.0,
+-                1.0, -p, 0.0,     1.0, 1.0,
+-               -1.0, -p, 0.0,     0.0, 1.0,
+-               -1.0,  p, 0.0,     0.0, 0.0,
+-            };
+-            if (mParallaxShift != 0 && mEnableStripParallaxSideView) {
+-                //视差调节时，修剪两边 // TODO: 对于Horizontal可验证，而Vertical & Chess需切换对比效果
+-                float shiftOffset = 2.0 * std::abs(mParallaxShift) + 2.0; //+2是往内边再收一点，防止多显示的锯齿
+-                //  计算Rendering偏移 (以坐标系及比例来计算 =>   m:1 = parallax/2 : texWidth/2 ==> m = parallax/texWidth
+-                float sideViewStrip = shiftOffset / texWidth;  
+-                logger->debug("sideViewStrip:{}" , sideViewStrip);
+-                vertices = {
+-                    float(1.0) + sideViewStrip,  p, 0.0,     1.0, 0.0,
+-                    float(1.0) + sideViewStrip, -p, 0.0,     1.0, 1.0,
+-                    float(-1.0) - sideViewStrip, -p, 0.0,     0.0, 1.0,
+-                    float(-1.0) - sideViewStrip,  p, 0.0,     0.0, 0.0,
+-                };
+-            }
+-        }
+-        else if (tr < vr) {
+-            //左右两侧裁剪
+-            vertices = {
+-                r,  1.0, 0.0,     1.0, 0.0,
+-                r, -1.0, 0.0,     1.0, 1.0,
+-               -r, -1.0, 0.0,     0.0, 1.0,
+-               -r,  1.0, 0.0,     0.0, 0.0,
+-            };
+-            if (mParallaxShift != 0 && mEnableStripParallaxSideView) {
+-                //视差调节时，修剪两边 // TODO: 对于Horizontal可验证，而Vertical & Chess需切换对比效果
+-                float shiftOffset = 2.0 * std::abs(mParallaxShift) + 2.0; //+2是往内边再收一点，防止多显示的锯齿
+-                //  计算Rendering偏移 (以坐标系及比例来计算 =>   m:1 = parallax/2 : texWidth/2 ==> m = parallax/texWidth
+-                float sideViewStrip = shiftOffset / texWidth;  
+-                logger->debug("sideViewStrip:{}",sideViewStrip);
+-                vertices = {
+-                    float(r) + sideViewStrip,  1.0, 0.0,     1.0, 0.0,
+-                    float(r) + sideViewStrip, -1.0, 0.0,     1.0, 1.0,
+-                    float(-r) - sideViewStrip, -1.0, 0.0,     0.0, 1.0,
+-                    float(-r) - sideViewStrip,  1.0, 0.0,     0.0, 0.0,
+-                };
+-            }
+-        }
+-        else {
+-            //拉伸显示，全屏+
+-            vertices = {
+-                1.0,  1.0, 0.0,     1.0, 0.0,
+-                1.0, -1.0, 0.0,     1.0, 1.0,
+-               -1.0, -1.0, 0.0,     0.0, 1.0,
+-               -1.0,  1.0, 0.0,     0.0, 0.0,
+-            };
+-
+-
+-            if (mParallaxShift != 0 && mEnableStripParallaxSideView) {
+-                //视差调节时，修剪两边 // TODO: 对于Horizontal可验证，而Vertical & Chess需切换对比效果
+-                float shiftOffset = 2.0 * std::abs(mParallaxShift) + 2.0; //+2是往内边再收一点，防止多显示的锯齿
+-                //  计算Rendering偏移 (以坐标系及比例来计算 =>   m:1 = parallax/2 : texWidth/2 ==> m = parallax/texWidth
+-                float sideViewStrip = shiftOffset / texWidth; 
+-                logger->debug("sideViewStrip:{}" , sideViewStrip);
+-                vertices = {
+-                    float(1.0) + sideViewStrip,  1.0, 0.0,     1.0, 0.0,
+-                    float(1.0) + sideViewStrip, -1.0, 0.0,     1.0, 1.0,
+-                    float(-1.0) - sideViewStrip, -1.0, 0.0,     0.0, 1.0,
+-                    float(-1.0) - sideViewStrip,  1.0, 0.0,     0.0, 0.0,
+-                };
+-            }
+-        }
+-
+-        // clang-format on
+-        glBindBuffer(GL_ARRAY_BUFFER, VBO);
+-        glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(float), vertices.data());
+-    }
+-
+-    if (mFullscreenMode == FullscreenMode::FULLSCREEN_PLUS_STRETCH) {
+-        std::vector<float> vertices;
+-        //若全屏模式为  全屏+， 则采用拉伸显示
+-        vertices = {
+-            1.0, 1.0, 0.0, 1.0, 0.0, 1.0, -1.0, 0.0, 1.0, 1.0, -1.0, -1.0, 0.0, 0.0, 1.0, -1.0, 1.0, 0.0, 0.0, 0.0,
+-        };
+-
+-        if (mParallaxShift != 0 && mEnableStripParallaxSideView) {
+-            //视差调节时，修剪两边 // TODO: 对于Horizontal可验证，而Vertical & Chess需切换对比效果
+-            float shiftOffset = 2.0 * std::abs(mParallaxShift) + 2.0; //+2是往内边再收一点，防止多显示的锯齿
+-            //  计算Rendering偏移 (以坐标系及比例来计算 =>   m:1 = parallax/2 : texWidth/2 ==> m = parallax/texWidth
+-            float sideViewStrip = shiftOffset / texWidth;
+-            logger->debug("sideViewStrip:{}", sideViewStrip);
+-            vertices = {
+-                float(1.0) + sideViewStrip,  1.0,  0.0, 1.0, 0.0, float(1.0) + sideViewStrip,  -1.0, 0.0, 1.0, 1.0,
+-                float(-1.0) - sideViewStrip, -1.0, 0.0, 0.0, 1.0, float(-1.0) - sideViewStrip, 1.0,  0.0, 0.0, 0.0,
+-            };
+-        }
+-
+-        // clang-format on
+-        glBindBuffer(GL_ARRAY_BUFFER, VBO);
+-        glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(float), vertices.data());
+-    }
+-
+-    glActiveTexture(GL_TEXTURE0);
+-    glBindTexture(GL_TEXTURE_2D, texs[0]);
+-    glPixelStorei(GL_UNPACK_ROW_LENGTH, linesize[0]);
+-    if (changed) {
+-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, data[0]);
+-    } else {
+-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RED, GL_UNSIGNED_BYTE, data[0]);
+-    }
+-
+-    glActiveTexture(GL_TEXTURE1);
+-    glBindTexture(GL_TEXTURE_2D, texs[1]);
+-    glPixelStorei(GL_UNPACK_ROW_LENGTH, linesize[1]);
+-    if (changed) {
+-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width / 2, height / 2, 0, GL_RED, GL_UNSIGNED_BYTE, data[1]);
+-    } else {
+-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width / 2, height / 2, GL_RED, GL_UNSIGNED_BYTE, data[1]);
+-    }
+-
+-    glActiveTexture(GL_TEXTURE2);
+-    glBindTexture(GL_TEXTURE_2D, texs[2]);
+-    glPixelStorei(GL_UNPACK_ROW_LENGTH, linesize[2]);
+-    if (changed) {
+-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width / 2, height / 2, 0, GL_RED, GL_UNSIGNED_BYTE, data[2]);
+-    } else {
+-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width / 2, height / 2, GL_RED, GL_UNSIGNED_BYTE, data[2]);
+-    }
+-
+-    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+-
+-    //shaderUse();
+-    glBindVertexArray(VAO);
+-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+-}
+-
+-void FFmpegView::cameraFrameDraw(int width, int height)
+-{
+-    glClearColor(0, 0, 0, 1);
+-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+-
+-    if (!mCameraImage.isNull()) {
+-        bool changed = false;
+-        logger->debug("width:{}xheight:{}, tex:{}x{}, ", width, height, texWidth, texHeight);
+-
+-        if (texWidth != width) {
+-            texWidth = width;
+-            changed = true;
+-        }
+-        if (texHeight != height) {
+-            texHeight = height;
+-            changed = true;
+-        }
+-
+-        float tr = (float) texWidth / texHeight;
+-        float vr = (float) viewWidth / viewHeight;
+-        float r = tr / vr;
+-        static int drawCounter = 0;
+-        drawCounter++;
+-        if (drawCounter % 10 == 0) {
+-            logger->debug("GLManager::draw frameWidth:{}x{}, textureSize:{}x{}, draw tr:{}, vr:{}, r:{}", width, height, texWidth, texHeight, tr, vr, r);
+-        }
+-
+-        if (r != ratio) {
+-            ratio = r;
+-            std::vector<float> vertices;
+-            // clang-format off
+-            if (tr > vr) {
+-                // 上下边界不渲染，即保持原背景效果，
+-                float p = vr / tr;
+-                vertices = {
+-                    1.0,  p, 0.0,     1.0, 0.0,
+-                    1.0, -p, 0.0,     1.0, 1.0,
+-                   -1.0, -p, 0.0,     0.0, 1.0,
+-                   -1.0,  p, 0.0,     0.0, 0.0,
+-                };
+-            }
+-            else if (tr < vr) {
+-                //左右两侧裁剪
+-                vertices = {
+-                    r,  1.0, 0.0,     1.0, 0.0,
+-                    r, -1.0, 0.0,     1.0, 1.0,
+-                   -r, -1.0, 0.0,     0.0, 1.0,
+-                   -r,  1.0, 0.0,     0.0, 0.0,
+-                };
+-            }
+-            else {
+-                //拉伸显示，全屏+
+-                vertices = {
+-                    1.0,  1.0, 0.0,     1.0, 0.0,
+-                    1.0, -1.0, 0.0,     1.0, 1.0,
+-                   -1.0, -1.0, 0.0,     0.0, 1.0,
+-                   -1.0,  1.0, 0.0,     0.0, 0.0,
+-                };
+-            }
+-
+-            // clang-format on
+-            glBindBuffer(GL_ARRAY_BUFFER, VBO);
+-            glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(float), vertices.data());
+-        }
+-
+-        if (mFullscreenMode == FullscreenMode::FULLSCREEN_PLUS_STRETCH) {
+-            std::vector<float> vertices;
+-            //若全屏模式为  全屏+， 则采用拉伸显示
+-            vertices = {
+-                1.0, 1.0, 0.0, 1.0, 0.0, 1.0, -1.0, 0.0, 1.0, 1.0, -1.0, -1.0, 0.0, 0.0, 1.0, -1.0, 1.0, 0.0, 0.0, 0.0,
+-            };
+-            // clang-format on
+-            glBindBuffer(GL_ARRAY_BUFFER, VBO);
+-            glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(float), vertices.data());
+-        }
+-
+-        glActiveTexture(GL_TEXTURE0);
+-        glBindTexture(GL_TEXTURE_2D, texs[0]);
+-
+-        //glPixelStorei(GL_UNPACK_ROW_LENGTH, linesize[0]);
+-        if (true) {
+-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mCameraImage.bits());
+-        } else {
+-            //glTexSubImage2D(GL_TEXTURE_2D,
+-            //    0,
+-            //    0,
+-            //    0,
+-            //    width,
+-            //    height,
+-            //    GL_RED,
+-            //    GL_UNSIGNED_BYTE,
+-            //    data[0]);
+-        }
+-
+-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+-
+-        //shaderUse();
+-        glBindVertexArray(VAO);
+-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+-    }
+-}
+-
+-bool FFmpegView::SaveImage(QString screenShotRootFolder, QString &savedFilePath)
+-{
+-    if (!QDir::current().exists(screenShotRootFolder)) {
+-        bool createdOk = QDir::current().mkdir(screenShotRootFolder);
+-        if (!createdOk) {
+-            logger->warn(" Create screenshotRootFolder:{} failed.", screenShotRootFolder.toStdString());
+-            return false;
+-        }
+-    }
+-
+-    QImage img = grabFramebuffer();
+-    if (img.isNull()) {
+-        logger->error("Failed to grab framebuffer");
+-        return false;
+-    }
+-
+-    QDateTime now = QDateTime::currentDateTime();
+-    QString timeStr = now.toString("yyyyMMddHHmmss");
+-    savedFilePath = screenShotRootFolder + "/Snapshots_" + timeStr + ".png";
+-    return img.save(savedFilePath);
+-}
+-
+-void FFmpegView::onPlayStateChanged(PlayState state)
+-{
+-    logger->info(" ==============================================================state:{}", int(state));
+-
+-    if (state == PlayState::STOP) {
+-        // 当播放完成或停止时，状态更新Timer停止
+-        logger->info("FFmpegView::onPlayStateChanged is Finished or Stopped:---------------------------------{}", int(state));
+-        StopRendering();
+-        logger->info("FFmpegView::onPlayStateChanged is Finished or Stopped, after StopRendering ----------{}", int(state));
+-    } else {
+-        logger->info(" state:{}", int(state));
+-    }
+-}
+-
+-void FFmpegView::onCameraFrameChanged(const QVideoFrame &frame)
+-{
+-    QVideoFrame videoFrame = frame;
+-
+-    logger->debug("frame size:{}x{}", frame.width(), frame.height());
+-
+-    if (frame.isValid()) {
+-        mCameraImage = frame.toImage();
+-        //qDebug()<<"------- pixelFormat :" << frame.pixelFormat();  //  Format_NV12
+-        //frame.pix
+-        //int lineSize = 3;// frame.bytesPerLine();
+-        //uchar *imgData = mCameraImage.bits();
+-        //programDraw(frame.width(), frame.height(), &imgData, &lineSize);
+-        //mCameraImage.save(QString("./cameraTest.png"), "PNG", 100);
+-    }
+-
+-    update();
+-}
+-
+-void FFmpegView::SetFullscreenMode(FullscreenMode mode)
+-{
+-    mFullscreenMode = mode;
+-    ratio = -1; //修改FullscreenMode之后，重新计算ratio以便刷新比例
+-    switch (mode) {
+-    case FULLSCREEN_KEEP_RATIO:
+-    default:
+-        mFullscreenTipsWidget->SetRenderInfo(true, QString(tr("Fullscreen")));
+-        break;
+-    case FULLSCREEN_PLUS_STRETCH:
+-        mFullscreenTipsWidget->SetRenderInfo(true, QString(tr("Fullscreen+")));
+-        break;
+-    }
+-}
+-
+-void FFmpegView::cameraTest()
+-{
+-    //mCamera = new QCamera(QMediaDevices::defaultVideoInput());
+-    //mCameraSession.setCamera(mCamera);
+-    //mCameraSession.setVideoSink(&mCameraSink);
+-    //connect(&mCameraSink, &QVideoSink::videoFrameChanged, this, &FFmpegView::onCameraFrameChanged);
+-    //mCamera->start();
+-}
+-
+-QList<QCameraDevice> FFmpegView::getCamerasInfo()
+-{
+-    const QList<QCameraDevice> cameras = QMediaDevices::videoInputs();
+-    //logger->debug("camerasSize:{}, videoInputs:{}, defaultVideoInput:{}", cameras.size(), QMediaDevices::videoInputs(), QMediaDevices::defaultVideoInput());
+-    for (int i = 0; i < cameras.size(); ++i) {
+-        //logger->debug("camera [{}]: {} -- {}", i, cameras[i].description(), QVariant::fromValue(cameras[i]).toString());
+-    }
+-
+-    return cameras;
+-}
+-
+-void FFmpegView::openCamera(QCameraDevice camDev)
+-{
+-    mCamera = new QCamera(camDev);
+-    mCameraSession.setCamera(mCamera);
+-    mCameraSession.setVideoSink(&mCameraSink);
+-
+-    connect(&mCameraSink, &QVideoSink::videoFrameChanged, this, &FFmpegView::onCameraFrameChanged);
+-}
+-
+-void FFmpegView::startCamera()
+-{
+-    if (mCamera) {
+-        SetRenderInputSource(RenderInputSource::RIS_CAMERA);
+-        mCamera->start();
+-    }
+-}
+-
+-void FFmpegView::stopCamera()
+-{
+-    if (mCamera) {
+-        mCamera->stop();
+-    }
+-}
+-
+-void FFmpegView::closeCamera()
+-{
+-    if (mCamera) {
+-        disconnect(&mCameraSink, &QVideoSink::videoFrameChanged, this, &FFmpegView::onCameraFrameChanged);
+-        mCamera->deleteLater();
+-        mCamera = nullptr;
+-    }
+-    if (!mCameraImage.isNull()) {
+-        mCameraImage = QImage();
+-    }
+-}
+-
+-void FFmpegView::DebugPrintStatus()
+-{
+-    logger->debug(
+-        "TimerActivate [Debug],    renderTime activate?{}, mPlayStatusUpdateTimer activate?{}", renderTimer.isActive(), mPlayStatusUpdateTimer.isActive());
+-}
+-
+-void FFmpegView::SetSeeking(string parentFunc, bool seekFlag)
+-{
+-    logger->info("seekFlag:{},mPlayStatusUpdateTimer:{}", seekFlag, mPlayStatusUpdateTimer.isActive());
+-    mSeeking = seekFlag;
+-    if (mSeeking) {
+-        mPlayStatusUpdateTimer.stop();
+-    } else {
+-        mPlayStatusUpdateTimer.start();
+-    }
+-    logger->info("LEAVING, seekFlag:{},mPlayStatusUpdateTimer:{}", seekFlag, mPlayStatusUpdateTimer.isActive());
+-}
+-
+-bool FFmpegView::UpdateSubtitlePosition(int64_t timestamp)
+-{
+-    if (mSubtitleWidget) {
+-        logger->info(" timestamp:{}", timestamp);
+-        mSubtitleWidget->Seek(timestamp);
+-        if (false == mSubtitleWidget->IsStarted()) {
+-            mSubtitleWidget->Start();
+-        }
+-    }
+-
+-    return false;
+-}
+-
+-bool FFmpegView::LoadSubtitle(QString filename)
+-{
+-    if (mSubtitleWidget) {
+-        mLoadSubtitleSuccess = mSubtitleWidget->SetSubtitleFile(filename);
+-        return mLoadSubtitleSuccess;
+-    }
+-    logger->warn("FFMpview::LoadSubtitle, subtitleWidget is nullptr");
+-    return false;
+-}
+-
+-void FFmpegView::StopSubtitle()
+-{
+-    if (mSubtitleWidget) {
+-        logger->info("FFmpegView::StopSubtitle - stopping and clearing subtitle");
+-        mSubtitleWidget->Stop();
+-        mLoadSubtitleSuccess = false;
+-    }
+-}
+-
+-bool FFmpegView::IsStereoRegion()
+-{
+-    return mEnableStereoRegion;
+-}
+\ No newline at end of file
+diff --git a/WZMediaPlay/FFmpegView.h b/WZMediaPlay/FFmpegView.h
+deleted file mode 100644
+index 4b746ad..0000000
+--- a/WZMediaPlay/FFmpegView.h
++++ /dev/null
+@@ -1,235 +0,0 @@
+-#pragma once
+-
+-#include <string>
+-#include <QLabel>
+-#include <QObject>
+-#include <QOpenGLFunctions_3_3_Core>
+-#include <QOpenGLPixelTransferOptions>
+-#include <QOpenGLShaderProgram>
+-#include <QOpenGLTexture>
+-#include <QOpenGLWidget>
+-#include <QResizeEvent>
+-#include <QTimer>
+-#include <QVideoFrame>
+-#include <QWidget>
+-#include <chrono>
+-using namespace std;
+-#include "GlobalDef.h"
+-#include "PlaybackStateMachine.h"
+-
+-class PlayController;
+-
+-
+-#include <QCamera>
+-#include <QCameraFormat>
+-#include <QMediaCaptureSession>
+-#include <QMediaDevices>
+-#include <QVideoSink>
+-
+-class FullscreenTipsWidget;
+-class SubtitleWidget;
+-class FloatButton;
+-
+-/**
+-视频输出渲染控件
+-*/
+-class FFmpegView : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core
+-{
+-    Q_OBJECT
+-public:
+-    FFmpegView(QWidget *parent = nullptr);
+-    ~FFmpegView();
+-signals:
+-    void updatePlayProcess(int64_t);
+-    //void stereoFormatChanged(StereoFormat mStereoFormat, StereoInputFormat mStereoInputFormat, StereoOutputFormat mStereoOutputFormat);
+-
+-public slots:
+-    void OnRenderTimer();
+-    void OnUpdateStatusTimer();
+-    void onPlaybackStateChanged(PlaybackState state);
+-    void onCameraFrameChanged(const QVideoFrame &frame);
+-
+-protected:
+-    virtual void initializeGL();
+-    virtual void resizeGL(int w, int h);
+-    virtual void paintGL();
+-    void keyPressEvent(QKeyEvent *event);
+-
+-    void enterEvent(QEnterEvent *e);
+-    void leaveEvent(QEvent *e);
+-
+-    void moveEvent(QMoveEvent *event);
+-    void resizeEvent(QResizeEvent *e);
+-    void paintEvent(QPaintEvent *e);
+-    ////////////////////////////////////////////////////////////////////////////////////////
+-public:
+-    int StartRendering(StereoFormat stereoFormat, StereoInputFormat stereoInputFormat, StereoOutputFormat stereoOutputFormat, float frameRate);
+-    bool StopRendering();
+-
+-    bool PlayPause(bool isPause);
+-    void SetPlayController(PlayController *controller);
+-
+-    void SetFullscreenMode(FullscreenMode mode);
+-    bool IsRendering();
+-
+-public:
+-    void DebugPrintStatus();
+-
+-public: //StereoControl
+-    const string KEY_RENDER_INPUT_SOURCE = "iRenderInputSource";
+-    const string KEY_STEREO_FLAG = "iStereoFlag";
+-    const string KEY_STEREO_INPUT_FORMAT = "iStereoInputFormat";
+-    const string KEY_STEREO_OUTPUT_FORMAT = "iStereoOutputFormat";
+-    const string KEY_ENABLE_REGION = "bEnableRegion";
+-    const string KEY_VEC_REGION = "VecRegion";
+-    const string KEY_PARALLAX_SHIFT = "iParallaxOffset";
+-
+-    bool SetRenderInputSource(RenderInputSource ris);
+-    StereoFormat ToggleStereo(bool stereo_checked);
+-    StereoFormat SetStereoFormat(StereoFormat stereoFormat);
+-    StereoInputFormat SetStereoInputFormat(StereoInputFormat inputFormat);
+-    StereoOutputFormat SetStereoOutputFormat(StereoOutputFormat outputFormat);
+-    StereoOutputFormat GetStereoOutputFormat();
+-
+-    bool IsStereoRegion();
+-    bool SetStereoEnableRegion(bool enabled, int blX, int blY, int trX, int trY);
+-    bool CancelStereoRegion();
+-    bool SaveImage(QString screenShotRootFolder, QString &savedFilePath);
+-    void IncreaseParallax();
+-    void DecreaseParallax();
+-    void ResetParallax();
+-    void ToggleViewParallaxSideStrip();
+-    bool TakeScreenshot();
+-    void SetSeeking(string parentFunc, bool seekFlag);
+-    bool LoadSubtitle(QString filename);
+-    void StopSubtitle();  // 停止并清除字幕显示
+-    bool UpdateSubtitlePosition(int64_t timestamp);
+-
+-private:
+-    QString vertexSource_;
+-    QString fragmentSource_;
+-
+-    QString externalVertexSource_;
+-    QString externalFragmentSource_;
+-
+-private:
+-    bool loadInternalShaders();
+-    bool loadExternalShaders();
+-
+-    // 若有外部特定目录的shaderFile, 则载入外部shader覆盖内部自带的shaderSource
+-    bool shaderInit(const char *vertexSource, const char *fragmentSource);
+-    bool shaderInit(QString &vertexSource, QString &fragmentSource);
+-
+-    void shaderUse();
+-    void shaderSetBool(const std::string &name, bool value);
+-    void shaderSetInt(const std::string &name, int value);
+-    void shaderSetRect(const std::string &name, float topLeftX, float topLeftY, float bottomRightX, float bottomRightY);
+-
+-    void programDraw(int width, int height, uint8_t **data, int *linesize);
+-
+-    void cameraFrameDraw(int width, int height);
+-
+-public:
+-    FloatButton *butWidget = nullptr;
+-    QLabel *mWindowLogo = nullptr;
+-    QPixmap mWindowLogPM;
+-
+-private:
+-    //Stereo 3D Related, Definitions  (多窗口时应每个窗口有单独的Stereo状态)
+-    //iStereoFlag, 2d/3d, 0--for normal 2d, 1 --- for stereo(3d)
+-    //iStereoInputFormat = default, 0 --- lr
+-    //                   = 1 -- rl
+-    //                   = 2 -- ud
+-    // iStereoOutputFormat = default, 0 -- vertical-barrier
+-    //                 = 1, horizontal-barrier
+-    //                 = 2, chess-barrier
+-    //                 = 3,  only-2d, if 3d, only display 2d(only left view)
+-    StereoFormat mStereoFormat = STEREO_FORMAT_NORMAL_2D; //  0 2D - 1 3D
+-    StereoInputFormat mStereoInputFormat = STEREO_INPUT_FORMAT_LR;
+-    StereoOutputFormat mStereoOutputFormat = STEREO_OUTPUT_FORMAT_HORIZONTAL;
+-    RenderInputSource mRenderInputSource = RenderInputSource::RIS_VIDEO_FILE;
+-    bool mEnableStereoRegion = false;
+-    float vecStereoRegion[4] = {0.0, 0.0, 1.0, 1.0};
+-
+-    int mParallaxShift = 0;
+-    bool mEnableStripParallaxSideView = true;
+-
+-    bool mSeeking = false;
+-    bool mIsRendering = false;
+-    
+-    // 渲染健康检查：监控paintGL是否正常调用
+-    std::chrono::steady_clock::time_point mLastPaintGLTime;
+-    int mRenderStallCounter = 0;  // 渲染停滞计数器
+-    
+-    // FPS 显示相关
+-    bool mShowFPS = false;  // 是否显示 FPS
+-    QLabel *mFPSLabel = nullptr;  // FPS 显示标签
+-    std::chrono::steady_clock::time_point mLastFPSTime;  // 上次 FPS 计算时间
+-    int mFPSCounter = 0;  // FPS 计数器
+-    float mCurrentFPS = 0.0f;  // 当前 FPS 值
+-
+-private:
+-    FullscreenMode mFullscreenMode;
+-    FullscreenTipsWidget *mFullscreenTipsWidget = nullptr;
+-
+-    SubtitleWidget *mSubtitleWidget = nullptr;
+-    bool mLoadSubtitleSuccess = false;
+-    int mSubtitleFontHeight = 50;
+-
+-    int mMinorShiftXForRightStereo = 0;
+-    int mMinorShiftYForRightStereo = 0;
+-    QPoint mLastGpt = QPoint(800, 600); // 对于moveEvent的gpt修正， 其中会用到move函数，在某些特殊情况下，会导致move函数调用的递归，使用此lastGpt进行判断，避免递归调用
+-
+-
+-private:
+-    // 使用 PlayController 替代直接访问 Movie
+-    PlayController *playController_ = nullptr;
+-
+-    int64_t pts_;
+-    float fps_;
+-
+-    //  play contorl
+-    QTimer renderTimer;
+-    QTimer mPlayStatusUpdateTimer;
+-    int elapsedInSeconds_;
+-
+-    QOpenGLShaderProgram m_shaderProgram;
+-    unsigned int VBO, VAO, EBO;
+-    unsigned int texs[3];
+-
+-    int mPixelFormat;
+-
+-    float ratio{1};
+-    int viewWidth = 300;
+-    int viewHeight = 200;
+-    int texWidth{-1};
+-    int texHeight{-1};
+-
+-    // clang-format off
+-    float vertices1[20] = {
+-         1.0,  1.0, 0.0,     1.0, 0.0,
+-         1.0, -1.0, 0.0,     1.0, 1.0,
+-        -1.0, -1.0, 0.0,     0.0, 1.0,
+-        -1.0,  1.0, 0.0,     0.0, 0.0,
+-    };
+-
+-    unsigned int glIndices[6] = {
+-        0, 1, 3,
+-        1, 2, 3
+-    };
+-
+-    //--------------------------------------------------------
+-    //  Camera 相关
+-private:
+-    QCamera* mCamera;
+-    QVideoSink mCameraSink;
+-    QMediaCaptureSession mCameraSession;
+-    QImage mCameraImage;
+-public:
+-    void cameraTest();
+-    QList<QCameraDevice> getCamerasInfo();
+-    void openCamera(QCameraDevice camDev);
+-    void startCamera();
+-    void stopCamera();
+-    void closeCamera();
+-};
+\ No newline at end of file
+diff --git a/WZMediaPlay/MainWindow.ui b/WZMediaPlay/MainWindow.ui
+index c26c1de..e137f80 100644
+--- a/WZMediaPlay/MainWindow.ui
++++ b/WZMediaPlay/MainWindow.ui
+@@ -1523,11 +1523,6 @@ background-color: rgb(0, 85, 200);
+    <extends>QListWidget</extends>
+    <header>DropListWidget.h</header>
+   </customwidget>
+-  <customwidget>
+-   <class>FFmpegView</class>
+-   <extends>QOpenGLWidget</extends>
+-   <header>FFmpegView.h</header>
+-  </customwidget>
+   <customwidget>
+    <class>StereoVideoWidget</class>
+    <extends>QWidget</extends>
+diff --git a/WZMediaPlay/PlayController.cpp b/WZMediaPlay/PlayController.cpp
+index 800413a..6c87986 100644
+--- a/WZMediaPlay/PlayController.cpp
++++ b/WZMediaPlay/PlayController.cpp
+@@ -9,10 +9,14 @@
+ #include "videoDecoder/OpenALAudio.h"
+ #include "videoDecoder/VideoThread.h"
+ #include "videoDecoder/VideoWriter.h"
++#include "videoDecoder/VideoRenderer.h"
++#include "videoDecoder/VideoWidgetBase.h"
+ #include "videoDecoder/chronons.h"
+ #include "videoDecoder/ffmpeg.h"
+ #include "videoDecoder/opengl/OpenGLWriter.hpp"
+ #include "videoDecoder/opengl/StereoWriter.hpp"
++#include "videoDecoder/opengl/OpenGLRenderer.h"
++#include "videoDecoder/opengl/StereoOpenGLRenderer.h"
+ #include <atomic>
+ #include <chrono>
+ #include <cstring>
+@@ -38,7 +42,6 @@ PlayController::PlayController(QObject *parent)
+     , demuxer_(nullptr)
+     , enableHardwareDecoding_(false) // [临时禁用硬件解码] TODO：修复硬件解码问题后启用（参考 docs/TODO_CURRENT.md）
+     , videoDecoder_(nullptr)
+-    , videoWriter_(nullptr)
+     , videoStreamIndex_(-1)
+     , audioStreamIndex_(-1)
+     , subtitleStreamIndex_(-1)
+@@ -89,9 +92,9 @@ PlayController::~PlayController()
+     // 停止所有线程
+     stop();
+ 
+-    // 清理 Decoder 和 VideoWriter
++    // 清理 Decoder 和 Renderer
+     videoDecoder_.reset();
+-    videoWriter_.reset();
++    videoRenderer_.reset();
+ 
+     // 清理 Audio（Video 类已删除，功能已迁移到 PlayController）
+     if (audio_) {
+@@ -222,14 +225,14 @@ bool PlayController::open(const QString &filename)
+             }
+             return false;
+         }
+-        if (!videoWriter_) {
+-            SPDLOG_LOGGER_ERROR(logger, "PlayController::open: videoWriter_ is null, cannot create VideoThread");
+-            stateMachine_.transitionTo(PlaybackState::Error, "videoWriter_ is null");
++        if (!videoRenderer_) {
++            SPDLOG_LOGGER_ERROR(logger, "PlayController::open: videoRenderer_ is null, cannot create VideoThread");
++            stateMachine_.transitionTo(PlaybackState::Error, "videoRenderer_ is null");
+             if (audioThread_) {
+                 disconnectThreadSignals(audioThread_.get());
+                 stopThread(audioThread_.get(), "AudioThread", 5000);
+                 audioThread_.reset();
+-                SPDLOG_LOGGER_DEBUG(logger, "PlayController::open: AudioThread cleaned up after videoWriter_ null");
++                SPDLOG_LOGGER_DEBUG(logger, "PlayController::open: AudioThread cleaned up after videoRenderer_ null");
+             }
+             return false;
+         }
+@@ -240,13 +243,13 @@ bool PlayController::open(const QString &filename)
+         // 虽然新线程刚创建，但为了安全，还是断开连接
+         disconnectThreadSignals(videoThread_.get());
+ 
+-        // 设置 Decoder 和 VideoWriter 到 VideoThread
++        // 设置 Decoder 和 VideoRenderer 到 VideoThread
+         videoThread_->setDec(videoDecoder_.get());
+         SPDLOG_LOGGER_INFO(
+             logger, "PlayController::open: Decoder set to VideoThread, decoder type: {}, decoder ptr: {}", videoDecoder_->name(), (void *) videoDecoder_.get());
+ 
+-        videoThread_->setVideoWriter(videoWriter_.get());
+-        SPDLOG_LOGGER_INFO(logger, "PlayController::open: VideoWriter set to VideoThread");
++        videoThread_->setVideoRenderer(videoRenderer_.get());
++        SPDLOG_LOGGER_INFO(logger, "PlayController::open: VideoRenderer set to VideoThread");
+ 
+         // 设置视频帧率（用于动态调整渲染间隔）
+         if (demuxer_) {
+@@ -440,17 +443,17 @@ bool PlayController::initializeCodecs()
+         SPDLOG_LOGGER_WARN(logger, "PlayController::initializeCodecs: videoStreamIndex_ < 0, skipping video decoder initialization");
+     }
+ 
+-    // 创建 VideoWriter（OpenGLWriter），如果外部没有设置的话
+-    if (videoStreamIndex_ >= 0 && !videoWriter_) {
+-        videoWriter_ = std::make_shared<OpenGLWriter>();
+-        if (!videoWriter_->open()) {
+-            SPDLOG_LOGGER_ERROR(logger, "Failed to open OpenGLWriter");
+-            videoWriter_.reset();
++    // 创建 VideoRenderer（OpenGLRenderer），如果外部没有设置的话
++    if (videoStreamIndex_ >= 0 && !videoRenderer_) {
++        videoRenderer_ = std::make_shared<OpenGLRenderer>();
++        if (!videoRenderer_->open()) {
++            SPDLOG_LOGGER_ERROR(logger, "Failed to open OpenGLRenderer");
++            videoRenderer_.reset();
+             return false;
+         }
+-        SPDLOG_LOGGER_INFO(logger, "OpenGLWriter opened successfully");
+-    } else if (videoStreamIndex_ >= 0 && videoWriter_) {
+-        SPDLOG_LOGGER_INFO(logger, "PlayController::initializeCodecs: Using external VideoWriter");
++        SPDLOG_LOGGER_INFO(logger, "OpenGLRenderer opened successfully");
++    } else if (videoStreamIndex_ >= 0 && videoRenderer_) {
++        SPDLOG_LOGGER_INFO(logger, "PlayController::initializeCodecs: Using external VideoRenderer");
+     }
+ 
+     // 初始化时钟同步（从 Movie 迁移）
+@@ -464,29 +467,51 @@ bool PlayController::initializeCodecs()
+ 
+ QWidget *PlayController::getVideoWidget() const
+ {
+-    if (videoWriter_) {
+-        // 尝试转换为 OpenGLWriter 并获取 widget
+-        auto *glWriter = dynamic_cast<OpenGLWriter *>(videoWriter_.get());
+-        if (glWriter) {
+-            return glWriter->widget();
+-        }
+-        // 尝试转换为 StereoWriter
+-        auto *stereoWriter = dynamic_cast<StereoWriter *>(videoWriter_.get());
+-        if (stereoWriter) {
+-            return stereoWriter->widget();
+-        }
++    // 使用 VideoWidgetBase
++    if (videoWidgetBase_) {
++        return videoWidgetBase_;
+     }
++
++    // 从 VideoRenderer 获取 widget
++    if (videoRenderer_) {
++        return videoRenderer_->target();
++    }
++
+     return nullptr;
+ }
+ 
+-void PlayController::setVideoWriter(std::shared_ptr<VideoWriter> writer)
++void PlayController::setVideoRenderer(std::shared_ptr<VideoRenderer> renderer)
+ {
+-    if (writer) {
+-        videoWriter_ = writer;
+-        SPDLOG_LOGGER_INFO(logger, "PlayController::setVideoWriter: External VideoWriter set");
++    if (renderer) {
++        videoRenderer_ = renderer;
++        SPDLOG_LOGGER_INFO(logger, "PlayController::setVideoRenderer: VideoRenderer set to {}", renderer->name().toStdString());
++
++        // 如果 VideoThread 存在，更新其渲染器
++        if (videoThread_) {
++            // 注意：VideoThread 需要更新以支持 VideoRenderer
++            // 这里暂时记录日志，实际实现需要修改 VideoThread
++            SPDLOG_LOGGER_INFO(logger, "PlayController::setVideoRenderer: VideoThread will use new renderer");
++        }
+     } else {
+-        videoWriter_.reset();
+-        SPDLOG_LOGGER_INFO(logger, "PlayController::setVideoWriter: VideoWriter cleared");
++        videoRenderer_.reset();
++        SPDLOG_LOGGER_INFO(logger, "PlayController::setVideoRenderer: VideoRenderer cleared");
++    }
++}
++
++void PlayController::setVideoWidgetBase(VideoWidgetBase *widget)
++{
++    videoWidgetBase_ = widget;
++
++    if (widget) {
++        SPDLOG_LOGGER_INFO(logger, "PlayController::setVideoWidgetBase: VideoWidgetBase set");
++
++        // 如果 VideoWidgetBase 有渲染器，使用它
++        if (widget->renderer()) {
++            videoRenderer_ = widget->renderer();
++            SPDLOG_LOGGER_INFO(logger, "PlayController::setVideoWidgetBase: Using renderer from VideoWidgetBase");
++        }
++    } else {
++        SPDLOG_LOGGER_INFO(logger, "PlayController::setVideoWidgetBase: VideoWidgetBase cleared");
+     }
+ }
+ 
+@@ -972,13 +997,10 @@ bool PlayController::seek(int64_t positionMs)
+         std::chrono::duration_cast<milliseconds>(seekBasePts).count(),
+         std::chrono::duration_cast<milliseconds>(seekBasePts).count());
+ 
+-    // 6. 清空 OpenGLWriter 中的图像（在锁定状态下，避免并发渲染）
+-    if (videoWriter_ && vLocked) {
+-        OpenGLWriter *glWriter = dynamic_cast<OpenGLWriter *>(videoWriter_.get());
+-        if (glWriter) {
+-            glWriter->clearImg();
+-            SPDLOG_LOGGER_DEBUG(logger, "PlayController::seek: OpenGLWriter image cleared (under lock)");
+-        }
++    // 6. 清空 VideoRenderer 中的图像（在锁定状态下，避免并发渲染）
++    if (videoRenderer_ && vLocked) {
++        videoRenderer_->clear();
++        SPDLOG_LOGGER_DEBUG(logger, "PlayController::seek: VideoRenderer image cleared (under lock)");
+     }
+ 
+     // 7. 解锁线程（在 seek 请求前解锁，让线程可以继续运行并检查 flush 标志）
+diff --git a/WZMediaPlay/PlayController.h b/WZMediaPlay/PlayController.h
+index 8af93ae..fdbfce0 100644
+--- a/WZMediaPlay/PlayController.h
++++ b/WZMediaPlay/PlayController.h
+@@ -14,7 +14,8 @@ class VideoThread;
+ class AudioThread;
+ class DemuxerThread;
+ class Decoder;
+-class VideoWriter;
++class VideoRenderer; // 新的渲染器接口
++class VideoWidgetBase; // 新的视频窗口基类
+ class QWidget;
+ 
+ #include <atomic>
+@@ -115,13 +116,16 @@ public:
+     PacketQueue<4 * 1024 * 1024> *getAudioPacketQueue() { return &aPackets_; }
+ 
+     // 获取视频渲染窗口 widget（用于集成到 GUI）
++    // 注意：返回的是 VideoWidgetBase，支持新的渲染架构
+     QWidget *getVideoWidget() const;
+ 
+-    // 设置 VideoWriter（允许外部设置，如 StereoWriter）
+-    void setVideoWriter(std::shared_ptr<VideoWriter> writer);
++    // 设置 VideoRenderer（新的渲染器接口）
++    void setVideoRenderer(std::shared_ptr<VideoRenderer> renderer);
++    VideoRenderer *getVideoRenderer() const { return videoRenderer_.get(); }
+ 
+-    // 获取当前的 VideoWriter（用于外部访问）
+-    VideoWriter *getVideoWriter() const { return videoWriter_.get(); }
++    // 设置 VideoWidgetBase（新的视频窗口基类）
++    void setVideoWidgetBase(VideoWidgetBase *widget);
++    VideoWidgetBase *getVideoWidgetBase() const { return videoWidgetBase_; }
+ 
+     // 获取状态机引用（用于各个组件检查播放状态）
+     const PlaybackStateMachine &getStateMachine() const { return stateMachine_; }
+@@ -197,7 +201,10 @@ private:
+ 
+     // 解码器和渲染器（参考 QMPlayer2 的架构）
+     std::unique_ptr<Decoder> videoDecoder_;    // 视频解码器（FFDecSW 或 FFDecHW）
+-    std::shared_ptr<VideoWriter> videoWriter_; // 视频渲染器（OpenGLWriter 或 StereoWriter，改为 shared_ptr 以支持外部设置）
++
++    // 渲染架构（VideoRenderer + VideoWidgetBase）
++    std::shared_ptr<VideoRenderer> videoRenderer_; // 渲染器接口
++    VideoWidgetBase *videoWidgetBase_ = nullptr;   // 视频窗口基类（不拥有所有权，由外部管理）
+ 
+     // 线程管理（参考 QMPlayer2 的 PlayClass，使用智能指针管理生命周期）
+     std::shared_ptr<DemuxerThread> demuxThread_;
+diff --git a/WZMediaPlay/StereoVideoWidget.cpp b/WZMediaPlay/StereoVideoWidget.cpp
+index 15b9bc2..ba9bda6 100644
+--- a/WZMediaPlay/StereoVideoWidget.cpp
++++ b/WZMediaPlay/StereoVideoWidget.cpp
+@@ -1,5 +1,6 @@
+ /*
+-    StereoVideoWidget: 替换 FFmpegView 的包装类实现
++    StereoVideoWidget: 视频显示控件实现
++    支持新的 VideoRenderer 架构和旧的 StereoWriter 架构
+ */
+ 
+ #include "StereoVideoWidget.h"
+@@ -11,6 +12,8 @@
+ #include "SubtitleWidget.h"
+ #include "videoDecoder/opengl/CameraOpenGLWidget.hpp"
+ #include "videoDecoder/opengl/StereoWriter.hpp"
++#include "videoDecoder/opengl/OpenGLRenderer.h"
++#include "videoDecoder/opengl/StereoOpenGLRenderer.h"
+ #include <chrono>
+ #include <QCamera>
+ #include <QCoreApplication>
+@@ -34,7 +37,7 @@
+ extern spdlog::logger *logger;
+ 
+ StereoVideoWidget::StereoVideoWidget(QWidget *parent)
+-    : QWidget(parent)
++    : VideoWidgetBase(parent)
+     , isRendering_(false)
+     , currentStereoFormat_(STEREO_FORMAT_NORMAL_2D)
+     , currentStereoInputFormat_(STEREO_INPUT_FORMAT_LR)
+@@ -42,7 +45,6 @@ StereoVideoWidget::StereoVideoWidget(QWidget *parent)
+     , parallaxShift_(0)
+     , stereoRegionEnabled_(false)
+ {
+-    stereoWriter_ = new StereoWriter();
+     renderTimer_ = new QTimer(this);
+     statusUpdateTimer_ = new QTimer(this);
+ 
+@@ -59,7 +61,7 @@ StereoVideoWidget::StereoVideoWidget(QWidget *parent)
+         }
+     }
+ 
+-    // 设置布局，用于管理两个 OpenGL Widget 的切换
++    // 设置布局
+     QVBoxLayout *layout = new QVBoxLayout(this);
+     layout->setContentsMargins(0, 0, 0, 0);
+     layout->setSpacing(0);
+@@ -78,38 +80,9 @@ StereoVideoWidget::StereoVideoWidget(QWidget *parent)
+         layout->addWidget(cameraOpenGLWidget_);
+     }
+ 
+-    // 初始化 StereoWriter 并获取其 widget（用于视频文件渲染）
+-    // 注意：open() 会在 SetPlayController 时调用，确保在 PlayController::open() 之前设置
+-    try {
+-        if (stereoWriter_) {
+-            // 先调用 open() 初始化，这样 widget() 才能返回有效的 widget
+-            if (!stereoWriter_->open()) {
+-                if (logger) {
+-                    logger->error("StereoVideoWidget: Failed to open StereoWriter");
+-                }
+-            } else {
+-                QWidget *videoWidget = stereoWriter_->widget();
+-                if (videoWidget) {
+-                    layout->addWidget(videoWidget);
+-                    videoWidget->show(); // 默认显示视频文件 Widget
+-                    if (logger) {
+-                        logger->info("StereoVideoWidget: StereoWriter widget added to layout");
+-                    }
+-                } else {
+-                    if (logger) {
+-                        logger->warn("StereoVideoWidget: StereoWriter widget is null");
+-                    }
+-                }
+-            }
+-        }
+-    } catch (const std::exception &e) {
+-        if (logger) {
+-            logger->error("StereoVideoWidget::onPlaybackStateChanged: Exception: {}", e.what());
+-        }
+-    } catch (...) {
+-        if (logger) {
+-            logger->error("StereoVideoWidget::onPlaybackStateChanged: Unknown exception");
+-        }
++    // 注意：渲染器通过 setRenderer() 方法设置，不在构造函数中创建
++    if (logger) {
++        logger->info("StereoVideoWidget: Created, waiting for renderer to be set");
+     }
+ }
+ 
+@@ -125,12 +98,147 @@ StereoVideoWidget::~StereoVideoWidget()
+ 
+     // ShaderManager 会自动清理（QObject 父对象管理）
+ 
+-    if (stereoWriter_) {
+-        delete stereoWriter_;
+-        stereoWriter_ = nullptr;
++    // 清理渲染器
++    if (videoRenderer_) {
++        videoRenderer_->close();
++        videoRenderer_.reset();
+     }
+ }
+ 
++// VideoWidgetBase 接口实现
++void StereoVideoWidget::setRenderer(VideoRendererPtr renderer)
++{
++    // 关闭旧渲染器
++    if (videoRenderer_) {
++        videoRenderer_->close();
++    }
++
++    videoRenderer_ = renderer;
++
++    if (videoRenderer_) {
++        // 设置渲染目标
++        videoRenderer_->setTarget(this);
++
++        // 打开渲染器
++        if (!videoRenderer_->isOpen()) {
++            videoRenderer_->open();
++        }
++
++        // 应用当前的 3D 参数
++        auto *stereoRenderer = dynamic_cast<StereoOpenGLRenderer *>(videoRenderer_.get());
++        if (stereoRenderer) {
++            stereoRenderer->setStereoFormat(currentStereoFormat_);
++            stereoRenderer->setStereoInputFormat(currentStereoInputFormat_);
++            stereoRenderer->setStereoOutputFormat(currentStereoOutputFormat_);
++            stereoRenderer->setParallaxShift(parallaxShift_);
++        }
++
++        useNewRenderer_ = true;
++
++        if (logger) {
++            logger->info("StereoVideoWidget::setRenderer: Renderer set to {}", videoRenderer_->name().toStdString());
++        }
++    } else {
++        useNewRenderer_ = false;
++    }
++}
++
++VideoRendererPtr StereoVideoWidget::renderer() const
++{
++    return videoRenderer_;
++}
++
++void StereoVideoWidget::setStereoFormat(StereoFormat format)
++{
++    currentStereoFormat_ = format;
++
++    // 更新渲染器
++    if (videoRenderer_) {
++        auto *stereoRenderer = dynamic_cast<StereoOpenGLRenderer *>(videoRenderer_.get());
++        if (stereoRenderer) {
++            stereoRenderer->setStereoFormat(format);
++        }
++    }
++
++    emit stereoFormatChanged(format);
++
++    if (logger) {
++        logger->info("StereoVideoWidget::setStereoFormat: Format set to {}", static_cast<int>(format));
++    }
++}
++
++void StereoVideoWidget::setStereoInputFormat(StereoInputFormat inputFormat)
++{
++    currentStereoInputFormat_ = inputFormat;
++
++    if (videoRenderer_) {
++        auto *stereoRenderer = dynamic_cast<StereoOpenGLRenderer *>(videoRenderer_.get());
++        if (stereoRenderer) {
++            stereoRenderer->setStereoInputFormat(inputFormat);
++        }
++    }
++
++    if (logger) {
++        logger->info("StereoVideoWidget::setStereoInputFormat: Input format set to {}", static_cast<int>(inputFormat));
++    }
++}
++
++void StereoVideoWidget::setStereoOutputFormat(StereoOutputFormat outputFormat)
++{
++    currentStereoOutputFormat_ = outputFormat;
++
++    if (videoRenderer_) {
++        auto *stereoRenderer = dynamic_cast<StereoOpenGLRenderer *>(videoRenderer_.get());
++        if (stereoRenderer) {
++            stereoRenderer->setStereoOutputFormat(outputFormat);
++        }
++    }
++
++    if (logger) {
++        logger->info("StereoVideoWidget::setStereoOutputFormat: Output format set to {}", static_cast<int>(outputFormat));
++    }
++}
++
++void StereoVideoWidget::setParallaxShift(int shift)
++{
++    parallaxShift_ = shift;
++
++    if (videoRenderer_) {
++        auto *stereoRenderer = dynamic_cast<StereoOpenGLRenderer *>(videoRenderer_.get());
++        if (stereoRenderer) {
++            stereoRenderer->setParallaxShift(shift);
++        }
++    }
++
++    if (logger) {
++        logger->info("StereoVideoWidget::setParallaxShift: Parallax shift set to {}", shift);
++    }
++}
++
++QImage StereoVideoWidget::grabFrame()
++{
++    // 使用新的渲染器
++    if (videoRenderer_ && videoRenderer_->isOpen()) {
++        // 新的渲染器需要实现 grabFrame 功能
++        // 这里暂时返回空图像，需要后续实现
++        return QImage();
++    }
++
++    return QImage();
++}
++
++void StereoVideoWidget::clear()
++{
++    if (videoRenderer_) {
++        videoRenderer_->clear();
++    }
++}
++
++bool StereoVideoWidget::isReady() const
++{
++    return videoRenderer_ && videoRenderer_->isReady();
++}
++
+ void StereoVideoWidget::initializeUIComponents()
+ {
+     /**
+@@ -479,20 +587,17 @@ void StereoVideoWidget::SetPlayController(PlayController *controller)
+ {
+     playController_ = controller;
+ 
+-    // 将 StereoWriter 设置到 PlayController
+-    // 必须在 PlayController::open() 之前设置，这样 initializeCodecs() 就不会创建默认的 OpenGLWriter
+-    if (playController_ && stereoWriter_) {
+-        // 设置 VideoWriter 到 PlayController（使用shared_ptr）
+-        auto writerPtr = std::shared_ptr<VideoWriter>(stereoWriter_, [](VideoWriter *) {
+-            // 空的删除器，因为StereoWriter由StereoVideoWidget管理
+-        });
+-        playController_->setVideoWriter(writerPtr);
++    // 将 VideoRenderer 设置到 PlayController
++    // 必须在 PlayController::open() 之前设置，这样 initializeCodecs() 就不会创建默认的渲染器
++    if (playController_ && videoRenderer_) {
++        // 设置 VideoRenderer 到 PlayController
++        playController_->setVideoRenderer(videoRenderer_);
+ 
+         // 连接 PlayController 的信号
+         connect(playController_, &PlayController::playbackStateChanged, this, &StereoVideoWidget::onPlaybackStateChanged);
+ 
+         if (logger) {
+-            logger->info("StereoVideoWidget::SetPlayController: StereoWriter set to PlayController");
++            logger->info("StereoVideoWidget::SetPlayController: VideoRenderer set to PlayController");
+         }
+     }
+ }
+diff --git a/WZMediaPlay/StereoVideoWidget.h b/WZMediaPlay/StereoVideoWidget.h
+index e512c48..a273eb6 100644
+--- a/WZMediaPlay/StereoVideoWidget.h
++++ b/WZMediaPlay/StereoVideoWidget.h
+@@ -1,12 +1,14 @@
+ /*
+-    StereoVideoWidget: 替换 FFmpegView 的包装类
+-    内部使用 StereoWriter 进行渲染，提供与 FFmpegView 兼容的接口
++    StereoVideoWidget: 视频显示控件
++    继承 VideoWidgetBase，支持新的渲染架构
++    提供与 FFmpegView 兼容的接口
+ */
+ 
+ #pragma once
+ 
+ #include "GlobalDef.h"
+ #include "PlaybackStateMachine.h"
++#include "videoDecoder/VideoWidgetBase.h"
+ #include <string>
+ #include <QCamera>
+ #include <QCameraDevice>
+@@ -24,7 +26,6 @@
+ #include <QVBoxLayout>
+ #include <QVideoFrame>
+ #include <QVideoSink>
+-#include <QWidget>
+ 
+ class PlayController;
+ class StereoWriter;
+@@ -34,20 +35,41 @@ class FloatButton;
+ class CameraOpenGLWidget;
+ 
+ /**
+- * StereoVideoWidget: 替换 FFmpegView 的包装类
+- * 
++ * StereoVideoWidget: 视频显示控件
++ * 继承 VideoWidgetBase 以支持新的渲染架构
+  * 职责：
+  * - 提供与 FFmpegView 兼容的接口
+- * - 内部使用 StereoWriter 进行渲染
++ * - 内部使用 StereoWriter 进行渲染（旧架构）
++ * - 支持新的 VideoRenderer 架构
+  * - 管理 UI 组件（FullscreenTipsWidget, SubtitleWidget, FloatButton）
+  */
+-class StereoVideoWidget : public QWidget
++class StereoVideoWidget : public VideoWidgetBase
+ {
+     Q_OBJECT
+ 
+ public:
+     explicit StereoVideoWidget(QWidget *parent = nullptr);
+-    ~StereoVideoWidget();
++    ~StereoVideoWidget() override;
++
++    // VideoWidgetBase 接口实现
++    void setRenderer(VideoRendererPtr renderer) override;
++    VideoRendererPtr renderer() const override;
++
++    void setStereoFormat(StereoFormat format) override;
++    StereoFormat stereoFormat() const override { return currentStereoFormat_; }
++
++    void setStereoInputFormat(StereoInputFormat inputFormat) override;
++    StereoInputFormat stereoInputFormat() const override { return currentStereoInputFormat_; }
++
++    void setStereoOutputFormat(StereoOutputFormat outputFormat) override;
++    StereoOutputFormat stereoOutputFormat() const override { return currentStereoOutputFormat_; }
++
++    void setParallaxShift(int shift) override;
++    int parallaxShift() const override { return parallaxShift_; }
++
++    QImage grabFrame() override;
++    void clear() override;
++    bool isReady() const override;
+ 
+ signals:
+     void updatePlayProcess(int64_t);
+@@ -184,6 +206,10 @@ private:
+     void setupUIComponentsLayout();
+ 
+ private:
++    // 新的渲染架构
++    VideoRendererPtr videoRenderer_;  // 新的渲染器接口
++    bool useNewRenderer_ = false;     // 是否使用新的渲染架构
++
+     StereoWriter *stereoWriter_ = nullptr;
+     PlayController *playController_ = nullptr;
+ 
+diff --git a/WZMediaPlay/WZMediaPlay.vcxproj b/WZMediaPlay/WZMediaPlay.vcxproj
+index 638c2ba..65d9f1e 100644
+--- a/WZMediaPlay/WZMediaPlay.vcxproj
++++ b/WZMediaPlay/WZMediaPlay.vcxproj
+@@ -147,7 +147,12 @@
+     <ClCompile Include="videoDecoder\FFDecHW.cpp" />
+     <ClCompile Include="videoDecoder\VideoWriter.cpp" />
+     <ClCompile Include="videoDecoder\VideoOutputCommon.cpp" />
++    <ClCompile Include="videoDecoder\VideoRenderer.cpp" />
++    <ClCompile Include="videoDecoder\VideoWidgetBase.cpp" />
++    <ClCompile Include="videoDecoder\AVClock.cpp" />
+     <ClCompile Include="videoDecoder\opengl\DebugImageSaver.cpp" />
++    <ClCompile Include="videoDecoder\opengl\OpenGLRenderer.cpp" />
++    <ClCompile Include="videoDecoder\opengl\StereoOpenGLRenderer.cpp" />
+     <ClCompile Include="videoDecoder\opengl\Functions.cpp" />
+     <ClCompile Include="videoDecoder\opengl\OpenGLWriter.cpp" />
+     <ClCompile Include="videoDecoder\opengl\OpenGLCommon.cpp" />
+@@ -208,8 +213,13 @@
+     <ClInclude Include="videoDecoder\FFDecSW.h" />
+     <ClInclude Include="videoDecoder\FFDecHW.h" />
+     <ClInclude Include="videoDecoder\VideoWriter.h" />
++    <ClInclude Include="videoDecoder\VideoRenderer.h" />
++    <QtMoc Include="videoDecoder\VideoWidgetBase.h" />
++    <ClInclude Include="videoDecoder\AVClock.h" />
+     <ClInclude Include="videoDecoder\VideoAdjustment.hpp" />
+     <ClInclude Include="videoDecoder\VideoOutputCommon.hpp" />
++    <ClInclude Include="videoDecoder\opengl\OpenGLRenderer.h" />
++    <ClInclude Include="videoDecoder\opengl\StereoOpenGLRenderer.h" />
+     <QtMoc Include="videoDecoder\opengl\DebugImageSaver.h" />
+     <ClInclude Include="videoDecoder\opengl\Functions.hpp" />
+     <ClInclude Include="videoDecoder\opengl\OpenGLCommon.hpp" />
+diff --git a/WZMediaPlay/videoDecoder/VideoThread.cpp b/WZMediaPlay/videoDecoder/VideoThread.cpp
+index e88d029..e57c775 100644
+--- a/WZMediaPlay/videoDecoder/VideoThread.cpp
++++ b/WZMediaPlay/videoDecoder/VideoThread.cpp
+@@ -3,6 +3,7 @@
+ #include "PlayController.h"
+ #include "videoDecoder/Decoder.h"
+ #include "videoDecoder/VideoWriter.h"
++#include "videoDecoder/VideoRenderer.h"
+ #include "videoDecoder/ffmpeg.h" // 包含 AVERROR 和 AVErrorEOF
+ #include "videoDecoder/opengl/DebugImageSaver.h"
+ #include "videoDecoder/opengl/OpenGLWriter.hpp"
+@@ -103,10 +104,13 @@ void VideoThread::setDec(Decoder *dec)
+     }
+ }
+ 
+-void VideoThread::setVideoWriter(VideoWriter *writer)
++
++
++void VideoThread::setVideoRenderer(VideoRenderer *renderer)
+ {
+-    writer_ = writer;
+-    SPDLOG_LOGGER_INFO(logger,"VideoThread::setVideoWriter: writer set");
++    renderer_ = renderer;
++    SPDLOG_LOGGER_INFO(logger,"VideoThread::setVideoRenderer: renderer set, type: {}", 
++        renderer ? renderer->name().toStdString() : "null");
+ }
+ 
+ void VideoThread::requestStop()
+diff --git a/WZMediaPlay/videoDecoder/VideoThread.h b/WZMediaPlay/videoDecoder/VideoThread.h
+index 5d0c92b..17a0e1a 100644
+--- a/WZMediaPlay/videoDecoder/VideoThread.h
++++ b/WZMediaPlay/videoDecoder/VideoThread.h
+@@ -16,6 +16,7 @@
+ class PlayController;  // Forward declaration
+ class Decoder;
+ class VideoWriter;
++class VideoRenderer;
+ class DebugImageSaver;
+ 
+ /**
+@@ -43,9 +44,9 @@ public:
+ 
+     // 设置解码器（由 PlayController 调用，重写以添加日志）
+     void setDec(Decoder* dec) override;
+-    
+-    // 设置渲染器（由 PlayController 调用）
+-    void setVideoWriter(VideoWriter* writer);
++
++    // 设置新的 VideoRenderer（由 PlayController 调用）
++    void setVideoRenderer(VideoRenderer* renderer);
+ 
+     // 请求停止（由 PlayController 调用）
+     void requestStop();
+@@ -85,7 +86,8 @@ signals:
+ 
+ private:
+     PacketQueue<50*1024*1024>* vPackets_;  // 视频数据包队列（由 DemuxerThread 提供）
+-    VideoWriter* writer_ = nullptr;  // 渲染器（不拥有所有权）
++
++    VideoRenderer* renderer_ = nullptr;  // 新渲染器（不拥有所有权）
+     
+     // Seeking 状态管理（改为成员变量，避免静态变量在视频切换时状态混乱）
+     // 注意：这些是线程内部的优化标志，不是状态机的状态
