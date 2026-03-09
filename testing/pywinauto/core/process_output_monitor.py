@@ -42,6 +42,11 @@ CRITICAL_PATTERNS = [
     r'R6025',  # MSVC runtime: pure virtual function call
     r'R6024',  # MSVC runtime: not enough space for _onexit
     r'__debugbreak',
+    # Seeking 相关：应用若将 seek 错误打到 stdout/stderr，可被记录并纳入报告
+    r'seek\s+(failed|error|invalid)',
+    r'Seeking\s+(failed|error|invalid)',
+    r'av_seek_frame\s+failed',
+    r'seek.*-?\d+\s+\(.*error',
 ]
 
 # 警告模式（累积超过阈值时判定失败；ALSOFT 等）

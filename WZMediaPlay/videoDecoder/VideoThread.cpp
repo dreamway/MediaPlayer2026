@@ -755,8 +755,8 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
 
     // 如果视频滞后太多，强制渲染，避免一直卡顿
     if (frameExpired) {
-        if (logger && (frameCount_ % 10 == 0)) { // 每10帧输出一次，避免日志过多
-            SPDLOG_LOGGER_WARN(
+        if (logger && (frameCount_ % 10 == 0)) { // 每10帧输出一次，避免日志过多（BUG-026：降为 debug 减噪）
+            SPDLOG_LOGGER_DEBUG(
                 logger,
                 "VideoThread::renderFrame: Frame expired (lag={}ms), forcing render: framePts={}ms, masterClock={}ms",
                 std::chrono::duration_cast<milliseconds>(-diff).count(),

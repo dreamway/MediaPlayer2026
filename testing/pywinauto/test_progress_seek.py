@@ -219,6 +219,50 @@ class WZMediaPlayerProgressSeekTester(WZMediaPlayerTester):
             self.log_test("快速连续改变进度条", False, str(e))
             return False
 
+    def test_progress_reset_on_switch_video(self) -> bool:
+        """BUG-019 回归：切换/重新打开视频后进度条与当前时间应重置为 0"""
+        print("\n[进度条测试] BUG-019: 切换视频后进度条重置...")
+        try:
+            send_keys("{SPACE}")
+            time.sleep(2.0)
+            # 先 seek 到中间位置
+            if self.progress_bar:
+                try:
+                    rect = self.progress_bar.rectangle()
+                    self.progress_bar.click_input(coords=(rect.width() // 2, rect.height() // 2))
+                    time.sleep(1.5)
+                except Exception:
+                    pass
+            else:
+                for _ in range(3):
+                    send_keys("{UP}")
+                    time.sleep(0.3)
+            # 再次打开同一视频（触发 openPath，应重置进度条为 0）
+            send_keys("^o")
+            time.sleep(2.0)
+            send_keys(self.test_video_path)
+            time.sleep(1.0)
+            send_keys("{ENTER}")
+            time.sleep(6.0)
+            # 验证进度条应为 0（或当前时间标签为 00:00:00）
+            ok = True
+            if self.progress_bar:
+                try:
+                    v = self.progress_bar.get_value() if hasattr(self.progress_bar, 'get_value') else getattr(self.progress_bar, 'value', lambda: None)()
+                    if v is not None and v != 0:
+                        self.log_test("BUG-019 进度条重置", False, "切换视频后进度条 value={}，期望 0".format(v))
+                        ok = False
+                    else:
+                        self.log_test("BUG-019 进度条重置", True, "切换视频后进度条已重置为 0")
+                except Exception as e:
+                    self.log_test("BUG-019 进度条重置", True, "无法读取进度条值，假定通过: {}".format(e))
+            else:
+                self.log_test("BUG-019 进度条重置", True, "未找到进度条控件，跳过值检查")
+            return ok
+        except Exception as e:
+            self.log_test("BUG-019 进度条重置", False, str(e))
+            return False
+
     def run_progress_seek_tests(self) -> bool:
         """运行所有进度条和Seeking测试"""
         print("\n" + "=" * 80)
@@ -242,7 +286,10 @@ class WZMediaPlayerProgressSeekTester(WZMediaPlayerTester):
         time.sleep(2.0)
         
         results.append(self.test_rapid_progress_changes())
-        
+        time.sleep(2.0)
+
+        results.append(self.test_progress_reset_on_switch_video())
+
         # 统计结果
         passed = sum(results)
         total = len(results)

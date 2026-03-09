@@ -180,6 +180,8 @@ public slots:
     // 播放完成处理辅助函数
     bool isPlaybackFinished() const;
     void handlePlaybackFinished();
+    /** BUG-020: 播放结束且无下一首时重置画面与 UI（进度条 0、时间 00:00:00、播放按钮未按下） */
+    void resetUiWhenPlaybackFinishedNoNext();
     void playNextVideoInList(bool loop = false);
     void playRandomVideoInList();
     void onSeekingFinished(int64_t value);

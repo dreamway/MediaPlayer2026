@@ -26,6 +26,12 @@ except ImportError:
     print("Error: log_monitor module not found. Ensure log_monitor.py is in same directory.")
     LogMonitor = None
 
+# 导入进程输出监控（与 run_closed_loop_tests / core 一致，用于捕获 stdout/stderr 错误）
+try:
+    from core.process_output_monitor import ProcessOutputMonitor
+except ImportError:
+    ProcessOutputMonitor = None
+
 
 class TestResult:
     """测试结果"""
@@ -51,6 +57,10 @@ class WZMediaPlayerTester:
         self.process = None
         self.test_results = []
 
+        # 进程输出监控（stdout/stderr，与 core/ui_automation 一致）
+        self._output_monitor = None
+        self._capture_process_output = True  # 是否捕获进程输出以检测崩溃/OpenAL 等错误
+
         # 日志监控器配置
         self.log_monitor = None
         self.log_file_path = None
@@ -64,12 +74,18 @@ class WZMediaPlayerTester:
 
     def _setup_log_monitor(self):
         """设置日志监控器"""
-        # 查找日志目录
-        log_dir = os.path.join(os.path.dirname(self.exe_path), "..", "..", "WZMediaPlay", "logs")
-        if not os.path.exists(log_dir):
-            # 尝试另一个可能的路径
-            log_dir = os.path.join(os.path.dirname(self.exe_path), "..", "logs")
-        
+        exe_dir = os.path.dirname(self.exe_path)
+        # 查找日志目录（多个候选：CMake 构建可能在 build/Release/logs，或仓库根 WZMediaPlay/logs）
+        candidates = [
+            os.path.join(exe_dir, "logs"),  # build/Release/logs
+            os.path.join(exe_dir, "..", "..", "WZMediaPlay", "logs"),
+            os.path.join(exe_dir, "..", "logs"),
+        ]
+        log_dir = exe_dir
+        for d in candidates:
+            if os.path.exists(d):
+                log_dir = d
+                break
         log_pattern = os.path.join(log_dir, "MediaPlayer_*.log")
         
         # 记录启动前的日志文件列表，用于识别exe启动后新创建的日志文件
@@ -119,7 +135,11 @@ class WZMediaPlayerTester:
                 self.log_file_path = latest_log
                 print(f"[LogMonitor] 使用最新的日志文件: {os.path.basename(latest_log)}")
             else:
-                print("[LogMonitor] 警告: 未找到日志文件")
+                # 未找到日志文件时：若已启用进程输出监控，以之为准，不报错
+                if getattr(self, '_output_monitor', None):
+                    print("[LogMonitor] 未找到日志文件，将仅使用进程输出监控（stdout/stderr）")
+                else:
+                    print("[LogMonitor] 警告: 未找到日志文件")
                 return
         
         # 清除之前的异常记录，开始新的监控周期
@@ -174,7 +194,7 @@ class WZMediaPlayerTester:
                     'context': context,
                     'full_line': anomaly.get('full_line', '')
                 })
-        
+
         return errors
 
     def log_test(self, name: str, passed: bool, details: str = "", check_log: bool = True, wait_for_log: float = 1.5):
@@ -229,7 +249,20 @@ class WZMediaPlayerTester:
                     print(f"    {level_icon} [{error['level'].upper()}] {error['message'][:120]}")
                 if len(log_errors) > 3:
                     print(f"    ... 还有 {len(log_errors) - 3} 个错误（查看完整日志文件获取详情）")
-        
+
+        # 进程输出监控（stdout/stderr 关键错误，与 run_closed_loop_tests / core 一致）
+        if passed and getattr(self, '_output_monitor', None) and self._output_monitor.has_failures():
+            passed = False
+            summary = self._output_monitor.get_errors_summary()
+            details = (details + "\n  [进程输出错误] " if details else "[进程输出错误] ") + (summary[:300] or "检测到关键错误")
+            log_errors.append({
+                'level': 'critical',
+                'message': summary.splitlines()[0][:150] if summary else 'ProcessOutputMonitor',
+                'timestamp': '',
+                'context': name,
+                'full_line': summary
+            })
+
         result = {
             "name": name,
             "passed": passed,
@@ -255,13 +288,42 @@ class WZMediaPlayerTester:
             if not os.path.exists(self.exe_path):
                 raise FileNotFoundError(f"可执行文件不存在: {self.exe_path}")
 
-            # 启动程序
-            self.process = subprocess.Popen([self.exe_path])
+            # 与 core/ui_automation 一致：测试模式下让 exe 可写日志等
+            env = os.environ.copy()
+            if 'WZ_LOG_MODE' not in env:
+                env['WZ_LOG_MODE'] = '1'
+            if 'WZ_TEST_MODE' not in env:
+                env['WZ_TEST_MODE'] = '1'
+
+            # 启动程序（可选捕获 stdout/stderr，用于 ProcessOutputMonitor）
+            if self._capture_process_output and ProcessOutputMonitor:
+                self.process = subprocess.Popen(
+                    [self.exe_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    cwd=os.path.dirname(self.exe_path),
+                    env=env,
+                )
+                self._output_monitor = ProcessOutputMonitor(
+                    self.process, self.process.stdout, capture_all=False
+                )
+                self._output_monitor.start()
+            else:
+                self.process = subprocess.Popen(
+                    [self.exe_path],
+                    cwd=os.path.dirname(self.exe_path),
+                    env=env,
+                )
             time.sleep(8)  # Qt6程序需要足够长的启动时间
 
             # 验证进程是否还在运行
             if self.process.poll() is not None:
-                raise RuntimeError("播放器进程启动后立即退出")
+                err_msg = "播放器进程启动后立即退出"
+                if self._output_monitor:
+                    summary = self._output_monitor.get_errors_summary()
+                    if summary:
+                        err_msg += "\n" + summary[:500]
+                raise RuntimeError(err_msg)
 
             # 启动日志监控
             self.start_log_monitoring()
@@ -440,6 +502,28 @@ class WZMediaPlayerTester:
             self.log_test("音量控制", False, str(e), check_log=True)
             return False
 
+    def test_video_switch_twice(self) -> bool:
+        """BUG-018 回归：连续切换两次视频应不崩溃（stop 不调用 DemuxerThread::requestStop）"""
+        print("\n[步骤] BUG-018: 视频切换两次...")
+        try:
+            send_keys("^o")
+            time.sleep(2.0)
+            send_keys(self.test_video_path)
+            time.sleep(1.0)
+            send_keys("{ENTER}")
+            time.sleep(6.0)
+            send_keys("^o")
+            time.sleep(2.0)
+            send_keys(self.test_video_path)
+            time.sleep(1.0)
+            send_keys("{ENTER}")
+            time.sleep(6.0)
+            self.log_test("BUG-018 视频切换两次", True, "两次打开同一视频，无崩溃")
+            return True
+        except Exception as e:
+            self.log_test("BUG-018 视频切换两次", False, str(e))
+            return False
+
     def generate_report(self) -> str:
         """生成测试报告（包含异常日志摘要）"""
         report_lines = []
@@ -464,7 +548,17 @@ class WZMediaPlayerTester:
         report_lines.append(f"总计: {total} | 通过: {passed} | 失败: {failed}")
         if total_log_errors > 0:
             report_lines.append(f"检测到日志错误: {total_log_errors} 个")
+        if getattr(self, '_output_monitor', None) and self._output_monitor.has_failures():
+            report_lines.append("检测到进程输出错误（stdout/stderr）")
         report_lines.append("")
+
+        # 进程输出错误摘要（与 run_closed_loop_tests 一致）
+        if getattr(self, '_output_monitor', None) and self._output_monitor.has_failures():
+            report_lines.append("-" * 80)
+            report_lines.append("进程输出错误（ProcessOutputMonitor）:")
+            report_lines.append("-" * 80)
+            report_lines.append(self._output_monitor.get_errors_summary())
+            report_lines.append("")
 
         # 异常日志摘要
         if self.log_monitor:
@@ -519,14 +613,21 @@ class WZMediaPlayerTester:
     def stop_player(self):
         """停止播放器"""
         try:
-            # 停止日志监控
+            if getattr(self, '_output_monitor', None):
+                self._output_monitor.stop()
+                self._output_monitor = None
             self.stop_log_monitoring()
-
             if self.process and self.process.poll() is None:
                 self.process.terminate()
                 time.sleep(2)
         except Exception as e:
             print(f"停止播放器错误: {e}")
+
+    def get_process_output_summary(self) -> str:
+        """返回进程输出监控错误摘要（供 run_all_tests 写入报告）"""
+        if getattr(self, '_output_monitor', None):
+            return self._output_monitor.get_errors_summary()
+        return ""
 
 
 def main():

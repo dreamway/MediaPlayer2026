@@ -116,6 +116,10 @@ bool PlayController::open(const QString &filename)
     // 如果已经打开，先停止
     if (isOpened()) {
         stop();
+        // 切换视频时立即清空渲染器，避免出现“声音已是新视频但画面仍是旧视频”的残留
+        if (videoRenderer_) {
+            videoRenderer_->clear();
+        }
     }
 
     // 清除 seeking 状态（确保新打开文件时状态正确）
@@ -737,6 +741,14 @@ void PlayController::stop()
     videoThreadSafe = std::move(videoThread_);
     audioThreadSafe = std::move(audioThread_);
 
+    // 2.5 断开所有线程的 finished()->deleteLater()，避免线程退出时 Qt 排队 deleteLater 导致与 shared_ptr 析构竞态，引发 "QMutex: destroying locked mutex"（Debug 下 Qt 会打印）
+    if (demuxThreadSafe)
+        disconnectThreadSignals(demuxThreadSafe.get());
+    if (videoThreadSafe)
+        disconnectThreadSignals(videoThreadSafe.get());
+    if (audioThreadSafe)
+        disconnectThreadSignals(audioThreadSafe.get());
+
     // 3. 停止所有线程（使用统一停止顺序）
     // 停止DemuxerThread
     if (demuxThreadSafe) {
@@ -856,12 +868,10 @@ void PlayController::stopThread(QThread *thread, const char *threadName, int tim
             thread->terminate();
         }
     } else if (strcmp(threadName, "DemuxerThread") == 0) {
+        // DemuxerThread 无 requestStop()，通过 controller_->isStopping()/isStopped() 与 setFinished() 退出
+        // setFinished() 已在 stop() 开头统一调用，此处仅轮询 isRunning()
         DemuxerThread *demuxThread = dynamic_cast<DemuxerThread *>(thread);
-        if (demuxThread) {
-            demuxThread->requestStop();
-            vPackets_.setFinished();
-            aPackets_.setFinished();
-        } else {
+        if (!demuxThread) {
             SPDLOG_LOGGER_ERROR(logger, "PlayController::stopThread: Failed to cast to DemuxerThread");
             thread->terminate();
         }
@@ -1222,8 +1232,14 @@ int64_t PlayController::getCurrentPositionMs() const
         // 验证返回值是否超过视频时长（避免UI显示错误）
         int64_t durationMs = getDurationMs();
         if (durationMs > 0 && positionMs > durationMs) {
-            SPDLOG_LOGGER_WARN(
-                logger, "PlayController::getCurrentPositionMs: Position ({} ms) exceeds duration ({} ms), clamping to duration", positionMs, durationMs);
+            int64_t deltaMs = positionMs - durationMs;
+            if (deltaMs <= 100) {
+                SPDLOG_LOGGER_DEBUG(
+                    logger, "PlayController::getCurrentPositionMs: Position ({} ms) exceeds duration ({} ms), clamping to duration", positionMs, durationMs);
+            } else {
+                SPDLOG_LOGGER_WARN(
+                    logger, "PlayController::getCurrentPositionMs: Position ({} ms) exceeds duration ({} ms), clamping to duration", positionMs, durationMs);
+            }
             return durationMs;
         }
         return positionMs;

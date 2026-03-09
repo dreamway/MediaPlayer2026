@@ -468,6 +468,27 @@ else()
     target_link_libraries(ErrorRecoveryManagerTest PRIVATE spdlog::spdlog fmt::fmt Threads::Threads)
 endif()
 
+# Seeking 状态机单元测试（enterSeeking/exitSeeking）
+add_executable(SeekingStateMachineTest
+    ${WZMEDIA_SRC_DIR}/tests/SeekingStateMachineTest.cpp
+    ${WZMEDIA_SRC_DIR}/PlaybackStateMachine.cpp
+    ${WZMEDIA_SRC_DIR}/tests/test_logger_stub.cpp
+)
+target_compile_definitions(SeekingStateMachineTest PRIVATE
+    STANDALONE_TEST
+    SPDLOG_FMT_EXTERNAL
+)
+target_include_directories(SeekingStateMachineTest PRIVATE
+    ${WZMEDIA_SRC_DIR}
+)
+if(WIN32)
+    target_link_libraries(SeekingStateMachineTest PRIVATE spdlog::spdlog fmt::fmt)
+else()
+    find_package(Threads REQUIRED)
+    target_link_libraries(SeekingStateMachineTest PRIVATE spdlog::spdlog fmt::fmt Threads::Threads)
+endif()
+
 enable_testing()
 add_test(NAME PlaybackStateMachineTest COMMAND PlaybackStateMachineTest)
 add_test(NAME ErrorRecoveryManagerTest COMMAND ErrorRecoveryManagerTest)
+add_test(NAME SeekingStateMachineTest COMMAND SeekingStateMachineTest)

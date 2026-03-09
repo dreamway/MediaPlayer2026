@@ -105,49 +105,135 @@ docs/ 下的 63 个文档与本登记表的对应关系：
 
 ## 🆕 新发现 Bug (2026-03-03 手动测试)
 
-### 🔴 BUG-018: 视频切换时线程阻塞导致崩溃
+### BUG-018: 视频切换时线程阻塞导致崩溃
 
 | 属性 | 描述 |
 |------|------|
 | **现象** | 切换视频时程序崩溃，关闭上一个视频的解码线程时无限等待，最终强制关闭时崩溃 |
-| **根因分析** | 线程同步问题：VideoThread/AudioThread 在 stop() 时等待消费者线程退出，但消费者线程可能阻塞在条件变量等待上，导致死锁 |
-| **相关组件** | ThreadSyncManager, VideoThread, AudioThread, DemuxerThread |
+| **根因分析** | stopThread(DemuxerThread) 调用了已删除的 requestStop()；DemuxerThread 仅通过 isStopping()/setFinished() 退出 |
+| **相关组件** | PlayController::stopThread(), DemuxerThread |
 | **优先级** | P0 - 致命 |
-| **状态** | ⚠️ 未修复 |
-| **建议方案** | 1. 使用 ThreadSyncManager 统一管理线程生命周期 2. 添加超时机制避免无限等待 3. 确保 stop() 时先 signal 再 wait |
+| **状态** | 已修复（2026-03 计划实施） |
+| **修复** | PlayController::stopThread() 中 DemuxerThread 分支移除 requestStop() 调用，仅依赖 setFinished（stop() 开头已调用）与 isRunning() 轮询 |
+| **验证** | pywinauto：main.test_video_switch_twice()（连续两次打开同一视频，无崩溃） |
 
-### 🔴 BUG-019: 切换视频后进度条位置未重置
+### BUG-019: 切换视频后进度条位置未重置
 
 | 属性 | 描述 |
 |------|------|
 | **现象** | 手动切换打开新视频后，进度条位置未从头开始，仍停留在上一个视频播放位置附近 |
-| **根因分析** | PlayController::openPath() 或 MainWindow 未正确重置进度条 slider 位置 |
-| **相关组件** | MainWindow, PlayController, CustomSlider |
+| **根因分析** | MainWindow::openPath() 未在设置 max 后调用 setValue(0) 与当前时间标签 |
+| **相关组件** | MainWindow::openPath() |
 | **优先级** | P1 - 高 |
-| **状态** | ⚠️ 未修复 |
-| **建议方案** | 在 openPath() 成功后调用 slider->setValue(0) 并更新 duration 显示 |
+| **状态** | 已修复（2026-03 计划实施） |
+| **修复** | openPath() 中 setMaximum/setSingleStep 后增加 setValue(0)、label_playTime->setText("00:00:00")、currentElapsedInSeconds_=0 |
+| **验证** | pywinauto：test_progress_seek.test_progress_reset_on_switch_video() |
 
-### 🔴 BUG-020: 播放结束时画面未清理且UI状态异常
+### BUG-020: 播放结束时画面未清理且UI状态异常
 
 | 属性 | 描述 |
 |------|------|
-| **现象** | 播放结束时：1) 视频画面未清空为黑屏/Logo，残留旧帧图像 2) 播放控件未切换至"播放完成"状态 3) 进度条未重置 |
-| **根因分析** | handlePlaybackFinished() 未正确清理 VideoWidget 显示，未重置 UI 控件状态 |
-| **相关组件** | MainWindow::handlePlaybackFinished(), VideoWidget, StereoVideoWidget |
+| **现象** | 播放结束时：1) 视频画面未清空 2) 播放控件未切换至"播放完成"状态 3) 进度条未重置 |
+| **根因分析** | handlePlaybackFinished() 在“无下一首”分支仅调用 StopRendering()，未清画面、未重置进度条与播放按钮 |
+| **相关组件** | MainWindow::handlePlaybackFinished(), StereoVideoWidget |
 | **优先级** | P1 - 高 |
-| **状态** | ⚠️ 未修复 |
-| **建议方案** | 1. 播放结束时调用 videoWidget->clearFrame() 2. 重置 playButton 图标状态 3. 重置 slider 到 0 位置 |
+| **状态** | 已修复（2026-03 计划实施） |
+| **修复** | 新增 resetUiWhenPlaybackFinishedNoNext()：playWidget->clear()、StopRendering()、slider=0、labels 00:00:00、playPause setChecked(false)；在 Sequential/Random/default 及 Loop 列表空时调用 |
+| **验证** | pywinauto：test_edge_cases.test_playback_finished_ui_reset() |
 
-### 🔴 BUG-021: 进度条快速Seek时画面/声音不同步
+### BUG-021: 进度条快速Seek时画面/声音不同步
 
 | 属性 | 描述 |
 |------|------|
-| **现象** | 进度条快速拖动时两种异常：1) 声音跟上新位置但画面仍显示旧帧 2) 声音和画面都未切换到新位置 |
-| **根因分析** | Seeking 时 flush 不彻底，或 seek 完成后未正确触发首帧解码和显示更新 |
-| **相关组件** | PlayController::seek(), DemuxerThread::seek(), VideoThread, AudioThread |
+| **现象** | 进度条快速拖动时声音或画面未切换到新位置 |
+| **根因分析** | seek 完成后需正确 exitSeeking 与刷新首帧 |
+| **相关组件** | PlayController::seek(), onDemuxerThreadSeekFinished |
 | **优先级** | P1 - 高 |
-| **状态** | ⚠️ 未修复 |
-| **建议方案** | 1. seek() 后强制刷新首帧 2. 确保 flush 后 decoder 状态正确重置 3. 添加 seek 完成回调通知 UI 更新 |
+| **状态** | 已确认（Code Review） |
+| **结论** | onDemuxerThreadSeekFinished 已调用 stateMachine_.exitSeeking("Seek completed successfully")；seek() 已设 flush、Reset 队列、clear 渲染器。现有流程正确，无新增代码；回归依赖 test_multiple_seeks 等 |
+
+### BUG-022: 播放完成后视频区域显示异常（绿/品红花屏或随机图案）
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 播放自然结束后，视频区域出现绿/品红几何块、条纹、像素化数字等异常画面，FPS 显示 0.0，时间 00:00:00/00:00:00；非正常最后一帧或黑屏 |
+| **根因分析** | clearImg() 仅将 hasImage=false、videoFrame.clear()，paintGL() 在「无帧且从未渲染」时直接 return，未清除视口，导致保留上一帧或未定义缓冲区内容；部分驱动/时机下表现为未初始化或错误格式的显存内容（绿/品红为 YUV 错当 RGB 的典型表现） |
+| **相关组件** | OpenGLCommon::paintGL()、OpenGLCommon::clearImg()、MainWindow::resetUiWhenPlaybackFinishedNoNext()、StereoVideoWidget::StopRendering() |
+| **优先级** | P1 - 高 |
+| **状态** | 已修复（2026-03 实施） |
+| **修复** | 在 OpenGLCommon::paintGL() 中，当 frameIsEmpty && !hasImage 时，先 glClearColor(0,0,0,1) + glClear(GL_COLOR_BUFFER_BIT)，再 return，确保播放结束清空后再次绘制时显示黑屏而非残留或花屏 |
+| **验证** | 手动：播放至结束，确认画面为黑或 Logo，无绿/品红块；可选 pywinauto 增加「播放至结束检查画面」用例 |
+
+### BUG-023: Debug 下 Qt 输出 "QMutex: destroying locked mutex" 导致自动化测试大面积失败
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 使用 Debug 版 exe 跑 `run_all_tests.py` 时，进程 stderr 出现多次 "QMutex: destroying locked mutex"，ProcessOutputMonitor 将其判为关键错误，导致 150 用例中 135 失败（各阶段一旦出现即整阶段标为有进程输出错误） |
+| **根因分析** | AVThread 构造中连接了 `finished()` -> `deleteLater()`，stop() 时虽用 shared_ptr 接管并 wait()，但若未在**等待前**断开该连接，线程退出时仍会排队 deleteLater()，与 shared_ptr 析构竞态，Qt 在析构 QThread 时可能触发“销毁时仍被锁定”的 mutex 警告 |
+| **相关组件** | PlayController::stop()、AVThread 构造函数、disconnectThreadSignals() |
+| **优先级** | P1 - 高（影响 Debug 测试与稳定性） |
+| **状态** | 已修复（2026-03 实施） |
+| **修复** | 在 PlayController::stop() 中，在 move 线程到局部 shared_ptr 之后、调用 stopThread() 之前，对 demuxThreadSafe / videoThreadSafe / audioThreadSafe 统一调用 disconnectThreadSignals()，确保由 shared_ptr 唯一析构，不再排队 deleteLater() |
+| **验证** | 使用 Debug exe 重跑 `run_all_tests.py`，进程输出中不应再出现 QMutex 关键错误；通过用例数应显著回升 |
+
+### BUG-024: 切换视频后声音已是新视频但画面仍为旧视频
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 切换打开新视频后，音频已播放新文件，但视频区域仍显示上一段视频的最后一帧或未及时刷新 |
+| **根因分析** | open() 中 stop() 后未立即清空渲染器，新视频解码/首帧尚未写入前，渲染器仍保留上一路输出 |
+| **相关组件** | PlayController::open()、VideoRenderer::clear() |
+| **优先级** | P1 - 高 |
+| **状态** | 已修复（2026-03 实施） |
+| **修复** | 在 open() 中，当 isOpened() 为真时在 stop() 之后立即调用 videoRenderer_->clear()，切换视频时先清画面再加载新文件 |
+| **验证** | 手动：连续切换多个视频，确认画面与声音同步切换；可选 pywinauto 增加切换后首帧校验 |
+
+### BUG-025: stop 时 writeAudio 多次失败触发 ErrorRecoveryManager
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 日志出现 `ErrorRecoveryManager: Error writeAudio failed after 10 retries (type: 2, retry: 1), action: 1` 及 `Audio::writeAudio: alSourcePlay called but state=4116, will retry`；多发生在 stop/切换视频时 |
+| **根因分析** | stop 时主线程已 requestStop，AudioThread 仍可能执行一轮 decodeAndWriteAudio；此时 OpenAL 源已 AL_STOPPED(4116)，writeAudio 内 alSourcePlay 失败并重试 10 次后上报 ErrorRecoveryManager |
+| **相关组件** | AudioThread::decodeAndWriteAudio、Audio::writeAudio、ErrorRecoveryManager |
+| **优先级** | P1 - 高 |
+| **状态** | 已修复（2026-03 实施） |
+| **修复** | 在 decodeAndWriteAudio 入口若 isStopping/isStopped/br_ 为真则直接返回 true；并在 writeAudio 重试循环**内部**每轮同样检查，若为真则 break 并 return true，避免 stop 发生在循环期间仍重试 10 次 |
+| **验证** | 重跑 pywinauto 或播放至结束/切换视频，日志中不应再出现 writeAudio failed after 10 retries |
+
+### BUG-026: Frame expired 与 Thread health check（与 BUG-008 相关）
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 日志大量 `VideoThread::renderFrame: Frame expired (lag=XXXms), forcing render` 及 `Thread health check failed - Video: Xms, Audio: Yms, Demux: Zms` |
+| **根因分析** | 视频落后于主时钟时强制渲染过期帧；系统监控检测到 Video 线程长时间未更新。与 BUG-008（FPS/丢帧）及音视频同步相关 |
+| **相关组件** | VideoThread::renderFrame、PlayController 线程健康检查 |
+| **优先级** | P2 - 中 |
+| **状态** | 已登记，可选减噪 |
+| **修复** | 在 FULL_BUG_REGISTRY 中记录为已知现象；可选将 “Frame expired” 日志级别从 warn 改为 debug 或限频 |
+
+### BUG-027: getCurrentPositionMs 超 duration 的 clamp warning 噪音
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 日志重复 `PlayController::getCurrentPositionMs: Position (10004 ms) exceeds duration (10000 ms), clamping to duration` |
+| **根因分析** | 播放到尾端时主时钟略超 duration，getCurrentPositionMs 已正确 clamp，仅日志噪音 |
+| **相关组件** | PlayController::getCurrentPositionMs |
+| **优先级** | P2 - 中 |
+| **状态** | 已修复（2026-03 实施） |
+| **修复** | 当 positionMs > durationMs 且差值 ≤ 100 ms 时视为正常尾端误差，该次日志降为 debug；差值较大时保留 warn |
+| **验证** | 播放至结尾，日志中不应再刷屏 “exceeds duration” warn |
+
+### BUG-028: paintGL 空帧重复 log 噪音
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 日志每 100 次出现 `OpenGLCommon::paintGL called N times, videoFrame.isEmpty(): true, hasImage: true` |
+| **根因分析** | 无新帧时用上一帧重绘，为正常行为；停止或切换时较常见，日志冗余 |
+| **相关组件** | OpenGLCommon::paintGL |
+| **优先级** | P2 - 中 |
+| **状态** | 已修复（2026-03 实施） |
+| **修复** | 将该条从 warn 改为 debug |
+| **验证** | 停止播放或切换视频后，日志中不再出现该 warn |
 
 ---
 
@@ -184,3 +270,36 @@ docs/ 下的 63 个文档与本登记表的对应关系：
 - **运行命令**：`python run_all_tests.py`（EXE：`D:\2026Github\build\Release\WZMediaPlayer.exe`）
 - **结果**：因 TEST-001 未修复前即运行，各阶段在打印时异常退出，**未执行到实际播放/Seek 等用例**；汇总为 总计: 0 | 通过: 0 | 失败: 0；耗时约 110 秒（多阶段启动/异常/退出）。
 - **后续**：修复 TEST-001 后，请在本机再次执行 `cd testing/pywinauto && python run_all_tests.py`，将生成的报告与失败用例补充到本节；若发现新的播放器 BUG（如 BUG-018～021 的复现或新问题），请追加到上方「新发现 Bug」表格并注明由自动化测试发现。
+
+### TestRound 2 完整套件验证（2026-03-04）
+
+- **EXE**：`D:\2026Github\build\Release\WZMediaPlayer.exe`（VS2022 Community 手动编译）
+- **运行命令**：`cd testing/pywinauto && python run_all_tests.py`
+- **结果**：总计 **150** 用例 | **通过 149** | **失败 1**；耗时约 **829 秒**（约 13.8 分钟）。
+- **各阶段**：基础播放 33/33、3D 功能 15/15、边界条件 66/66、音视频同步 17/17、进度条/Seeking（含于各阶段）、音频 15/15、硬件解码 3/4。
+- **唯一失败项**：**硬件解码基础功能测试** — 失败原因：`硬件解码未在配置中启用`。此为配置项（SystemConfig.ini 中硬件解码当前禁用），非播放器 BUG；若需验证硬件解码，需在配置中启用后重跑该阶段。
+- **自动化测试未发现新 BUG**：基础播放、3D、边界、音视频同步、音频、进度条/Seeking 等均通过，未复现 BUG-018～021。
+- **报告文件**：`testing/pywinauto/test_report_full_20260304_211352.txt`（及同目录下其他时间戳报告）。
+- **日志**：当次运行提示「未找到日志文件」（LogMonitor 查找路径为 `WZMediaPlay/logs` 或 `build/logs`，若日志写在 `build/Release/logs` 需在 `main.py` 中增加候选路径）。
+
+### TestRound 3 Debug 运行与 BUG-023/024 修复（2026-03-05）
+
+- **EXE**：`build/Debug/WZMediaPlayer.exe`（Debug 构建，会向 stderr 输出 Qt 警告）
+- **运行命令**：`cd testing/pywinauto && python run_all_tests.py`（config 指向 Debug exe）
+- **结果**：总计 150 用例 | 通过 15 | 失败 135。失败原因主要为进程输出中检测到 **"QMutex: destroying locked mutex"**（Qt Debug 下析构顺序/deleteLater 竞态），ProcessOutputMonitor 将其判为关键错误，导致各阶段大量用例被标为失败。
+- **报告文件**：`test_report_full_20260305_003053.txt`。
+- **修复**：已实施 BUG-023（stop() 中先 disconnectThreadSignals 再 stopThread）、BUG-024（open() 中 stop() 后立即 videoRenderer_->clear()）。请用 Debug exe 重跑完整套件验证通过数是否恢复；若仍有 QMutex 输出，需继续排查其他析构路径。
+
+### TestRound 4 日志归纳与 BUG-025～028（2026-03-05）
+
+- **报告**：`test_report_full_20260305_010411.txt`（仍为 15 通过 / 135 失败，进程输出仍报 QMutex，需确认构建包含 BUG-023 修复）。
+- **日志**：`build/Debug/logs/MediaPlayer_20260305010107.log`。grep 归纳 6 类 warning：① ErrorRecoveryManager writeAudio failed after 10 retries；② Audio::writeAudio alSourcePlay state=4116；③ VideoThread::renderFrame Frame expired；④ getCurrentPositionMs Position exceeds duration clamping；⑤ Thread health check failed；⑥ OpenGLCommon::paintGL called N times videoFrame.isEmpty。
+- **登记**：BUG-025（writeAudio 在 stop 时重试）、BUG-026（Frame expired/health check，与 BUG-008 关联）、BUG-027（position 超 duration clamp 噪音）、BUG-028（paintGL 空帧 log）。C++ 修复见上。
+- **C++ 单元测试**：在 CMake 中新增 SeekingStateMachineTest（`WZMediaPlay/tests/SeekingStateMachineTest.cpp`），测试 PlaybackStateMachine 的 enterSeeking/exitSeeking 及 preSeekState 恢复；运行 `ctest` 可执行 PlaybackStateMachineTest、ErrorRecoveryManagerTest、SeekingStateMachineTest。SeekingAutomatedTest（依赖 MainWindow/QApplication）仍保留于 `WZMediaPlay/tests/`，需完整 Qt 应用环境，暂不纳入 CMake 默认测试。
+
+### TestRound 5 日志审查与 BUG-025 补充修复（2026-03-05）
+
+- **报告**：`test_report_full_20260305_021140.txt`（15 通过 / 135 失败，仍为 QMutex 导致阶段失败）。
+- **日志**：`build/Debug/logs/MediaPlayer_20260305020837.log`。审查结论：① **BUG-027/026/028 已生效**：`getCurrentPositionMs exceeds duration`、`Frame expired`、`paintGL called N times` 均为 **[debug]** 级别，不再刷屏 warn。② **BUG-025 仍出现**：日志中仍有多次 `ErrorRecoveryManager: Error writeAudio failed after 10 retries`；根因是 stop 可能在 **重试循环执行过程中** 发生，仅入口处检查 isStopping/isStopped 不足。
+- **补充修复**：在 AudioThread::decodeAndWriteAudio 的 writeAudio 重试循环**内部**每轮增加对 `br_` 及 `controller_->isStopping()/isStopped()` 的检查，若为真则立即 break 并 return true、av_free(samples)，避免在 stop 过程中仍重试 10 次并上报 ErrorRecoveryManager。
+- **C++ SeekingStateMachineTest**：手动运行通过（enterSeeking/exitSeeking from Playing/Paused、enterSeeking rejected when not Playing/Paused）。
