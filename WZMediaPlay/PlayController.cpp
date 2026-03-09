@@ -1473,6 +1473,40 @@ void PlayController::onDemuxerThreadSeekFinished(int64_t positionUs)
         return;
     }
 
+    // 同步音视频时钟到实际的目标位置
+    // 注意：seek() 方法中设置的是预期位置，但实际 seek 位置可能与之不同
+    // 需要在 seek 完成后将时钟同步到实际位置，确保音视频同步
+    nanoseconds actualSeekPts = nanoseconds{positionUs * 1000}; // 微秒转纳秒
+    double actualSeekSec = positionUs / 1000000.0; // 微秒转秒
+
+    SPDLOG_LOGGER_INFO(
+        logger,
+        "PlayController::onDemuxerThreadSeekFinished: Syncing clocks to actual seek position: {}ms",
+        std::chrono::duration_cast<milliseconds>(actualSeekPts).count());
+
+    // 更新全局基准 PTS 到实际 seek 位置
+    setBasePts(actualSeekPts);
+    setVideoBasePts(actualSeekPts);
+
+    // 更新视频时钟到实际 seek 位置
+    {
+        if (!threadSyncManager_.tryLock(videoClockMutex_, std::chrono::milliseconds(100))) {
+            SPDLOG_LOGGER_WARN(logger, "PlayController::onDemuxerThreadSeekFinished: Failed to lock videoClockMutex_ (timeout)");
+        } else {
+            videoClock_ = actualSeekPts;
+            videoClockTime_ = {}; // 重置时间点，标记为"未更新"
+            threadSyncManager_.unlock(videoClockMutex_);
+        }
+    }
+
+    // 更新主时钟 AVClock 到实际 seek 位置
+    if (masterClock_) {
+        masterClock_->reset();
+        masterClock_->setInitialValue(actualSeekSec);
+        masterClock_->start();
+        SPDLOG_LOGGER_DEBUG(logger, "PlayController::onDemuxerThreadSeekFinished: masterClock reset to {} seconds", actualSeekSec);
+    }
+
     // Seek 完成，恢复到 Seek 前的状态（Playing 或 Paused）
     stateMachine_.exitSeeking("Seek completed successfully");
 
@@ -1489,10 +1523,6 @@ void PlayController::onDemuxerThreadSeekFinished(int64_t positionUs)
         "PlayController::onDemuxerThreadSeekFinished: State transition completed (was Seeking: {}, now Seeking: {}), threads can resume",
         wasSeeking,
         isSeekingAfter);
-
-    // 注意：videoClock_已在seek()方法中设置为seekBasePts，此处不需要再次设置
-    // 如果再次设置，会导致时钟基准不一致（VideoThread使用相对PTS，但videoClock使用绝对时间）
-    SPDLOG_LOGGER_DEBUG(logger, "PlayController::onDemuxerThreadSeekFinished: videoClock already set in seek() method, skipping reset to maintain consistency");
 
     // 转换为毫秒并发送信号（通知 UI 层 seeking 完成）
     int64_t positionMs = positionUs / 1000;
