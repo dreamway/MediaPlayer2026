@@ -674,12 +674,9 @@ void main()
 		// 注意：GL_LUMINANCE格式已经将0-255归一化到0-1
 		// Limited range: Y在16-235，U/V在16-240（centered at 128）
 		// Full range: Y/U/V都在0-255
-		// 这里尝试两种方式：先假设limited range，如果颜色不对，可能需要调整
-		// 如果视频是full range，Y不需要减去0.0625，U/V不需要减去0.5
 		yuv.x = y - 0.0625;  // Y: limited range (16-235) -> 减去16/256
-		// BUG 2 修复：部分源（FFmpeg/驱动）输出的 U/V 与纹理命名相反，交换后可纠正绿/洋红偏色
-		yuv.y = v - 0.5;     // 用 textureV 填 U 位
-		yuv.z = u - 0.5;     // 用 textureU 填 V 位
+		yuv.y = u - 0.5;     // U 分量
+		yuv.z = v - 0.5;     // V 分量
 		
 		// BT.601 YUV到RGB转换矩阵
 		// R = Y + 1.402 * (V - 0.5)
