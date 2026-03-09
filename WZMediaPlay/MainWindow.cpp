@@ -53,14 +53,11 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    QString startupConfig = readConfig();
+    // 1. 先读取最小配置（包含 LOG_MODE 和 LOG_LEVEL）
+    ApplicationSettings earlySettings;
+    earlySettings.read_ApplicationGeneral();
 
-    GlobalDef::getInstance()->VIDEO_FILE_TYPE << ".mp4" << ".flv" << ".f4v" << ".webm" << ".m4v" << ".mov" << ".3gp" << ".3g2" << ".rm" << ".rmvb" << ".wmv"
-                                              << ".avi"
-                                              << ".asf" << ".mpg" << ".mpeg" << ".mpe" << ".ts" << ".div" << ".dv" << ".divx" << ".vob" << ".mkv" << ".wzmp4"
-                                              << ".wzavi"
-                                              << ".wzmkv" << ".wzmov" << ".wzmpg";
-
+    // 2. 初始化 logger（此时 LOG_MODE/LOG_LEVEL 已有值）
     if (GlobalDef::getInstance()->LOG_MODE == 1) {
 #ifdef Q_OS_WIN
         AllocConsole();
@@ -70,13 +67,21 @@ MainWindow::MainWindow(QWidget *parent)
 #endif
     }
 
-    ////Setup Logger
     bool setupOk = setupLogger();
     if (false == setupOk) {
-        QMessageBox::StandardButton button = QMessageBox::critical(static_cast<QWidget *>(this), QString(tr("Error")), QString(tr("Setup Logger Failed.")));
+        QMessageBox::StandardButton button = QMessageBox::critical(nullptr, QString(tr("Error")), QString(tr("Setup Logger Failed.")));
         std::cerr << "Logger setup failed.";
         exit(0);
     }
+
+    // 3. 读取完整配置
+    QString startupConfig = readConfig();
+
+    GlobalDef::getInstance()->VIDEO_FILE_TYPE << ".mp4" << ".flv" << ".f4v" << ".webm" << ".m4v" << ".mov" << ".3gp" << ".3g2" << ".rm" << ".rmvb" << ".wmv"
+                                              << ".avi"
+                                              << ".asf" << ".mpg" << ".mpeg" << ".mpe" << ".ts" << ".div" << ".dv" << ".divx" << ".vob" << ".mkv" << ".wzmp4"
+                                              << ".wzavi"
+                                              << ".wzmkv" << ".wzmov" << ".wzmpg";
 
     // 调试：验证logger初始化成功
     logger->info("Setup completed. logger pointer value: {}", static_cast<void*>(logger));
@@ -621,7 +626,11 @@ void MainWindow::broadcastCallback(char cmd)
 QString MainWindow::readConfig()
 {
     ApplicationSettings appSettings;
-    appSettings.read_ALL();
+    // read_ApplicationGeneral() 已在构造函数中提前调用
+    appSettings.read_WindowSizeState();
+    appSettings.read_PlayState();
+    appSettings.read_Hotkey();
+    appSettings.read_about_copyright();
     appSettings.read_PlayList();
 
     return appSettings.ToString();

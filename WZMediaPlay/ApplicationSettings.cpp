@@ -458,7 +458,9 @@ void ApplicationSettings::read_PlayList()
     //    list file
     QFile file(QCoreApplication::applicationDirPath() + "/config/playList.json");
     if (!file.open(QIODevice::ReadWrite)) {
-        logger->warn("can't open json file...");
+        if (logger) {
+            logger->warn("can't open json file...");
+        }
         return;
     }
     QTextStream stream(&file);
@@ -470,7 +472,9 @@ void ApplicationSettings::read_PlayList()
     QJsonDocument jsonDoc = QJsonDocument::fromJson(jsonStr.toUtf8(), &jsonError);
 
     if (jsonError.error != QJsonParseError::NoError && !jsonDoc.isNull()) {
-        logger->error("Json 格式错误!: {}", int(jsonError.error));
+        if (logger) {
+            logger->error("Json 格式错误!: {}", int(jsonError.error));
+        }
         return;
     }
 
@@ -535,7 +539,9 @@ void ApplicationSettings::write_PlayList()
 {
     QFile file(QCoreApplication::applicationDirPath() + "/config/playList.json");
     if (!file.open(QIODevice::ReadWrite)) {
-        logger->error("can't open json file: {}", file.fileName().toStdString());
+        if (logger) {
+            logger->error("can't open json file: {}", file.fileName().toStdString());
+        }
         return;
     }
     file.resize(0);
@@ -580,7 +586,9 @@ void ApplicationSettings::clear_PlayList()
 {
     QFile file(QCoreApplication::applicationDirPath() + "/config/playList.json");
     if (!file.open(QIODevice::ReadWrite)) {
-        logger->error("can't open json file.. {} ", file.fileName().toStdString());
+        if (logger) {
+            logger->error("can't open json file.. {} ", file.fileName().toStdString());
+        }
         return;
     }
     file.resize(0);
@@ -591,7 +599,9 @@ PlayList ApplicationSettings::load_PlayList(QString path)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadWrite)) {
-        logger->error("can't open json file.. {} ", file.fileName().toStdString());
+        if (logger) {
+            logger->error("can't open json file.. {} ", file.fileName().toStdString());
+        }
         return PlayList();
     }
     QTextStream stream(&file);
@@ -603,7 +613,9 @@ PlayList ApplicationSettings::load_PlayList(QString path)
     QJsonDocument jsonDoc = QJsonDocument::fromJson(jsonStr.toUtf8(), &jsonError);
 
     if (jsonError.error != QJsonParseError::NoError && !jsonDoc.isNull()) {
-        logger->error("Json format wrong {} ", int(jsonError.error));
+        if (logger) {
+            logger->error("Json format wrong {} ", int(jsonError.error));
+        }
         return PlayList();
     }
 
@@ -628,7 +640,9 @@ void ApplicationSettings::export_PlayList(QString path, int index)
 {
     QFile file(path + "/" + GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[index].list_name + ".json");
     if (!file.open(QIODevice::ReadWrite)) {
-        logger->error("can't open json file.. {} ", file.fileName().toStdString());
+        if (logger) {
+            logger->error("can't open json file.. {} ", file.fileName().toStdString());
+        }
         return;
     }
     file.resize(0);
