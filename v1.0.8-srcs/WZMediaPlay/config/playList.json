@@ -1,0 +1,36 @@
+{
+    "playlist_current_index": 0,
+    "playlist_current_video": 0,
+    "playlist_list_array": [
+        {
+            "playlist_list_name": "def",
+            "video_array": [
+                {
+                    "video_path": "D:/BaiduNetdiskDownload/CES Movie/Rise of the Guardians.mp4",
+                    "video_time": ""
+                },
+                {
+                    "video_path": "C:/Users/jingwenlai/Videos/Sample.mp4",
+                    "video_time": ""
+                },
+                {
+                    "video_path": "D:/BaiduNetdiskDownload/播放器测试片源/【VR180】8k舞蹈8bit 2.mp4",
+                    "video_time": ""
+                },
+                {
+                    "video_path": "D:/BaiduNetdiskDownload/播放器测试片源/Kandao美食需要调视差.mp4",
+                    "video_time": ""
+                },
+                {
+                    "video_path": "C:/Users/jingwenlai/Videos/output_srt_subtitle.mp4",
+                    "video_time": ""
+                },
+                {
+                    "video_path": "C:/Users/jingwenlai/Videos/Sample - LR.wzmp4",
+                    "video_time": ""
+                }
+            ]
+        }
+    ],
+    "playlist_video_play_time": 0
+}

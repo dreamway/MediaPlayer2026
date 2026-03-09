@@ -1,0 +1,42 @@
+<RCC>
+    <qresource prefix="/MainWindow">
+        <file>Resources/icon/WZMediaPlayer.png</file>
+        <file>Resources/logo/company_logo.png</file>
+        <file>Resources/theme/black/document-export.svg</file>
+        <file>Resources/theme/black/document-import.svg</file>
+        <file>Resources/theme/black/go-next.svg</file>
+        <file>Resources/theme/black/go-previous.svg</file>
+        <file>Resources/theme/black/media-playback-pause.svg</file>
+        <file>Resources/theme/black/media-playback-start.svg</file>
+        <file>Resources/theme/black/media-playback-stop.svg</file>
+        <file>Resources/theme/black/media-queue-visible.svg</file>
+        <file>Resources/theme/black/media-seek-backward.svg</file>
+        <file>Resources/theme/black/media-seek-forward.svg</file>
+        <file>Resources/theme/black/media-skip-backward.svg</file>
+        <file>Resources/theme/black/media-skip-forward.svg</file>
+        <file>Resources/theme/black/player-volume.svg</file>
+        <file>Resources/theme/black/player-volume-muted.svg</file>
+        <file>Resources/theme/black/tab-close.svg</file>
+        <file>Resources/theme/black/tab-duplicate.svg</file>
+        <file>Resources/theme/black/tab-new.svg</file>
+        <file>Resources/theme/black/video-x-generic-16.svg</file>
+        <file>Resources/theme/black/video-x-generic-32.svg</file>
+        <file>Resources/theme/black/view-media-queue.svg</file>
+        <file>Resources/theme/black/view-media-subtitles.svg</file>
+        <file>Resources/theme/black/view-media-subtitles-hidden.svg</file>
+        <file>Resources/theme/black/zone-in.svg</file>
+        <file>Resources/theme/black/zone-out.svg</file>
+        <file>Resources/theme/black/close.svg</file>
+        <file>Resources/theme/black/fullscreen.svg</file>
+        <file>Resources/theme/black/cancel-fullscreen.svg</file>
+        <file>Resources/theme/black/minimize.svg</file>
+        <file>Resources/theme/black/open-file.svg</file>
+        <file>Resources/theme/black/add-playlist.svg</file>
+        <file>Resources/theme/black/up.svg</file>
+        <file>Resources/logo/company_logo.png</file>
+        <file>Resources/icon/cancel.png</file>
+        <file>Resources/icon/check.png</file>
+        <file>Shader/fragment.glsl</file>
+        <file>Shader/vertex.glsl</file>
+    </qresource>
+</RCC>
