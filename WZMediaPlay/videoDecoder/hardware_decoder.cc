@@ -225,48 +225,10 @@ const AVCodec *HardwareDecoder::tryInitHardwareDecoder(AVCodecID codec_id, AVCod
                 return nullptr;
             }
 
-            // [新增] 创建硬件帧池（hw_frames_ctx）
-            // 必须检查 hw_device_ctx_ 的有效性，否则可能导致后续转换失败
-            if (!hw_device_ctx_) {
-                logger->error("Hardware decoder: hw_device_ctx_ is null, cannot allocate hardware frames context");
-                return nullptr;
-            }
-
-            AVBufferRef *hw_frames_ref = av_hwframe_ctx_alloc(hw_device_ctx_);
-            if (!hw_frames_ref) {
-                int ret = AVERROR(ENOMEM);
-                char errbuf[256] = {0};
-                av_strerror(ret, errbuf, sizeof(errbuf));
-                logger->error("Failed to allocate hardware frames context: {} ({})", ret, errbuf);
-                return nullptr;
-            }
-
-            AVHWFramesContext *frames_ctx = (AVHWFramesContext *) hw_frames_ref->data;
-            frames_ctx->format = config->pix_fmt;
-
-            // 根据设备类型选择软件格式
-            // D3D11VA 和 CUDA 通常输出 NV12
-            frames_ctx->sw_format = AV_PIX_FMT_NV12;
-
-            frames_ctx->width = codec_ctx->width;
-            frames_ctx->height = codec_ctx->height;
-            frames_ctx->initial_pool_size = 20; // 预分配20个帧
-
-            // 初始化硬件帧池
-            int ret = av_hwframe_ctx_init(hw_frames_ref);
-            if (ret < 0) {
-                char errbuf[256] = {0};
-                av_strerror(ret, errbuf, sizeof(errbuf));
-                logger->error("Failed to initialize hardware frames context: {} ({})", ret, errbuf);
-                av_buffer_unref(&hw_frames_ref);
-                av_buffer_unref(&hw_device_ctx_);
-                hw_device_ctx_ = nullptr;
-                device_type_name_ = "";
-                return nullptr;
-            }
-
-            // 设置硬件帧池到编解码器上下文
-            codec_ctx->hw_frames_ctx = hw_frames_ref;
+            // [修复] 不手动创建 hw_frames_ctx，让 FFmpeg 在 get_format 回调中自动创建
+            // 手动创建 hw_frames_ctx 可能导致参数不匹配，引发黑屏问题
+            // 参考 v1.0.8-srcs 的实现：只设置 hw_device_ctx，不设置 hw_frames_ctx
+            logger->debug("Hardware decoder: hw_device_ctx set, hw_frames_ctx will be created by FFmpeg automatically");
 
             // 保存硬件像素格式
             hw_pix_fmt_ = config->pix_fmt;

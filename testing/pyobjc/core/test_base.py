@@ -5,13 +5,17 @@ Base Test Framework for macOS UI Automation Testing
 
 import json
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional, Any, Callable
 
-from .app_launcher import AppLauncher
-from .window_controller import WindowController
+# 添加 pyobjc 目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.app_launcher import AppLauncher
+from core.window_controller import WindowController
 
 
 @dataclass

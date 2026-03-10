@@ -15,14 +15,8 @@
 extern spdlog::logger *logger;
 
 StereoOpenGLRenderer::StereoOpenGLRenderer()
-    : OpenGLRenderer()  // 先调用基类构造函数
+    : OpenGLRenderer(true)  // 调用基类构造函数，跳过 drawable_ 创建
 {
-    // 删除基类创建的 OpenGLCommon，替换为 StereoOpenGLCommon
-    if (drawable_) {
-        drawable_->deleteMe();
-        drawable_ = nullptr;
-    }
-
     // 创建 StereoOpenGLCommon 的具体实现
     // StereoOpenGLCommon 是抽象类，需要使用 StereoOpenGLWidget 或 StereoOpenGLWindow
     // 使用基类的 useRtt_ 成员来决定创建哪种类型
@@ -32,17 +26,11 @@ StereoOpenGLRenderer::StereoOpenGLRenderer()
         drawable_ = new StereoOpenGLWindow;
     }
 
-    if (drawable_ && drawable_->widget()) {
-        auto w = drawable_->widget();
-        w->grabGesture(Qt::PinchGesture);
-        w->setMouseTracking(true);
-    }
+    // 调用基类方法初始化通用设置
+    initDrawableSettings();
 
     // 读取设置
     QSettings settings;
-    if (drawable_) {
-        drawable_->setVSync(settings.value("OpenGL/VSync", true).toBool());
-    }
     bypassCompositor_ = settings.value("OpenGL/BypassCompositor", false).toBool();
 }
 

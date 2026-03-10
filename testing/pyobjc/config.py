@@ -4,7 +4,7 @@ import os
 # 播放器可执行文件路径
 APP_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "build", "WZMediaPlayer.app", "Contents", "MacOS", "WZMediaPlayer"
+    "dist", "WZMediaPlayer.app", "Contents", "MacOS", "WZMediaPlayer"
 )
 
 # 测试视频文件路径

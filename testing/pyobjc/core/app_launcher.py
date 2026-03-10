@@ -5,6 +5,12 @@ Application Launcher for macOS Applications
 
 import subprocess
 import time
+import sys
+import os
+
+# 添加 pyobjc 目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from AppKit import NSWorkspace, NSRunningApplication
 from ApplicationServices import (
     AXUIElementCreateApplication,
@@ -12,8 +18,8 @@ from ApplicationServices import (
     kAXWindowsAttribute,
 )
 
-from ..config import TIMEOUTS, WAIT_TIMES
-from .ax_element import AXElement
+from config import TIMEOUTS, WAIT_TIMES, APP_PATH
+from core.ax_element import AXElement
 
 
 class AppLauncherError(Exception):
@@ -34,7 +40,6 @@ class AppLauncher:
             app_path: Path to the application executable.
                       If None, uses the default from config.
         """
-        from ..config import APP_PATH
         self.app_path = app_path or APP_PATH
         self._process = None
         self._pid = None

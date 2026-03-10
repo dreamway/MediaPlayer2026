@@ -4,6 +4,12 @@ Window Controller for macOS UI Automation
 """
 
 import time
+import sys
+import os
+
+# 添加 pyobjc 目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from ApplicationServices import (
     AXUIElementCreateApplication,
     AXUIElementCopyAttributeValue,
@@ -13,8 +19,8 @@ from ApplicationServices import (
     kAXSliderRole,
 )
 
-from ..config import TIMEOUTS
-from .ax_element import AXElement
+from config import TIMEOUTS
+from core.ax_element import AXElement
 
 
 class WindowControllerError(Exception):

@@ -17,17 +17,33 @@
 extern spdlog::logger *logger;
 
 OpenGLRenderer::OpenGLRenderer()
+    : OpenGLRenderer(false)  // 调用带参数的构造函数
+{
+}
+
+OpenGLRenderer::OpenGLRenderer(bool skipDrawableCreation)
     : useRtt_(false)
     , bypassCompositor_(false)
 {
-    // 默认不使用 render-to-texture
-    // 可以从设置中读取或从外部传入
-    if (useRtt_) {
-        drawable_ = new OpenGLWidget;
-    } else {
-        drawable_ = new OpenGLWindow;
+    // 如果派生类会创建自己的 drawable_，则跳过创建
+    if (!skipDrawableCreation) {
+        // 默认不使用 render-to-texture
+        // 可以从设置中读取或从外部传入
+        if (useRtt_) {
+            drawable_ = new OpenGLWidget;
+        } else {
+            drawable_ = new OpenGLWindow;
+        }
+        initDrawableSettings();
     }
 
+    // 读取设置
+    QSettings settings;
+    bypassCompositor_ = settings.value("OpenGL/BypassCompositor", false).toBool();
+}
+
+void OpenGLRenderer::initDrawableSettings()
+{
     if (drawable_ && drawable_->widget()) {
         auto w = drawable_->widget();
         w->grabGesture(Qt::PinchGesture);
@@ -39,7 +55,6 @@ OpenGLRenderer::OpenGLRenderer()
     if (drawable_) {
         drawable_->setVSync(settings.value("OpenGL/VSync", true).toBool());
     }
-    bypassCompositor_ = settings.value("OpenGL/BypassCompositor", false).toBool();
 }
 
 OpenGLRenderer::~OpenGLRenderer()

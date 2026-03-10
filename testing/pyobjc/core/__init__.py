@@ -1,7 +1,11 @@
 # testing/pyobjc/core/__init__.py
-from .ax_element import AXElement
-from .app_launcher import AppLauncher
-from .window_controller import WindowController
-from .test_base import TestBase
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.ax_element import AXElement
+from core.app_launcher import AppLauncher
+from core.window_controller import WindowController
+from core.test_base import TestBase
 
 __all__ = ['AXElement', 'AppLauncher', 'WindowController', 'TestBase']

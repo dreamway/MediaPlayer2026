@@ -364,31 +364,54 @@ bool MainWindow::setupLogger()
     console_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e][thread %t][%s:%#][%l] : %v");
 
     QString timeStr = QDateTime::currentDateTime().toString("yyyyMMddHHmmss");
-    if (!QDir::current().exists("./logs")) {
-        QDir::current().mkdir("./logs");
-    }
-    QString logFilename = QString("./logs/MediaPlayer_" + timeStr + ".log");
-    //auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(logFilename.toUtf8().data(), true);
-    auto file_sink = spdlog::rotating_logger_mt("fileLogger", logFilename.toUtf8().data(), 1024 * 1024 * 5, 5);
 
-    file_sink->set_level(spdlog::level::info);
-    //file_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%n] [%^--%L--%$] [thread %t] %v");
-    // 格式说明：%s = 文件名, %# = 行号, %! = 函数名, %L = 日志级别
-    file_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e][thread %t][%s:%#][%L] : %v");
+    // [修复] 使用应用目录的绝对路径，而不是相对路径
+    // macOS 使用 `open` 命令启动 app 时，当前工作目录可能不是应用所在目录
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString logsDir = appDir + "/../logs";  // macOS: Contents/MacOS/../logs = Contents/logs
+    QDir logDir(logsDir);
+    if (!logDir.exists()) {
+        logDir.mkpath(".");
+    }
+    QString logFilename = logsDir + "/MediaPlayer_" + timeStr + ".log";
+
+    // [修复] 根据 LOG_MODE 创建对应的 logger，避免名称冲突
+    std::shared_ptr<spdlog::logger> main_logger;
 
     switch (GlobalDef::getInstance()->LOG_MODE) {
     case 1:
     case 0:
-        logger = new spdlog::logger("logger", console_sink);
-        logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e][thread %t][%s:%#][%L] : %v");
+        // 控制台日志模式：只创建控制台 logger
+        {
+            main_logger = std::make_shared<spdlog::logger>("logger", console_sink);
+            main_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e][thread %t][%s:%#][%L] : %v");
+            spdlog::register_logger(main_logger);
+        }
         break;
     case 2:
     default:
-        // 对于文件日志，确保格式正确应用
-        file_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e][thread %t][%s:%#][%L] : %v");
-        logger = file_sink.get();
+        // 文件日志模式：创建 rotating file logger
+        try {
+            main_logger = spdlog::rotating_logger_mt("logger", logFilename.toUtf8().data(), 1024 * 1024 * 5, 5);
+            main_logger->set_level(spdlog::level::info);
+            main_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e][thread %t][%s:%#][%L] : %v");
+        } catch (const spdlog::spdlog_ex& ex) {
+            // 日志文件创建失败，回退到控制台日志
+            std::cerr << "Failed to create rotating logger: " << ex.what() << std::endl;
+            std::cerr << "Log file path: " << logFilename.toStdString() << std::endl;
+            // 创建纯控制台 logger 作为后备
+            main_logger = std::make_shared<spdlog::logger>("logger", console_sink);
+            spdlog::register_logger(main_logger);
+        }
         break;
     }
+
+    if (!main_logger) {
+        return false;
+    }
+
+    // 设置全局 logger 指针
+    logger = main_logger.get();
 
     /**
     spdlog log_level definition
@@ -403,37 +426,37 @@ bool MainWindow::setupLogger()
     switch (GlobalDef::getInstance()->LOG_LEVEL) {
     case 0:
         console_sink->set_level(spdlog::level::trace);
-        file_sink->set_level(spdlog::level::trace);
+        main_logger->set_level(spdlog::level::trace);
         logger->set_level(spdlog::level::trace);
         break;
     case 1:
         console_sink->set_level(spdlog::level::debug);
-        file_sink->set_level(spdlog::level::debug);
+        main_logger->set_level(spdlog::level::debug);
         logger->set_level(spdlog::level::debug);
         break;
     case 2:
         console_sink->set_level(spdlog::level::info);
-        file_sink->set_level(spdlog::level::info);
+        main_logger->set_level(spdlog::level::info);
         logger->set_level(spdlog::level::info);
         break;
     case 3:
         console_sink->set_level(spdlog::level::warn);
-        file_sink->set_level(spdlog::level::warn);
+        main_logger->set_level(spdlog::level::warn);
         logger->set_level(spdlog::level::warn);
         break;
     case 4:
         console_sink->set_level(spdlog::level::err);
-        file_sink->set_level(spdlog::level::err);
+        main_logger->set_level(spdlog::level::err);
         logger->set_level(spdlog::level::err);
         break;
     case 5:
         console_sink->set_level(spdlog::level::critical);
-        file_sink->set_level(spdlog::level::critical);
+        main_logger->set_level(spdlog::level::critical);
         logger->set_level(spdlog::level::critical);
         break;
     case 6:
         console_sink->set_level(spdlog::level::off);
-        file_sink->set_level(spdlog::level::off);
+        main_logger->set_level(spdlog::level::off);
         logger->set_level(spdlog::level::off);
         break;
     }

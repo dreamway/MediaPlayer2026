@@ -85,6 +85,12 @@ public:
 
 protected:
     /**
+     * 派生类使用的构造函数（跳过 drawable_ 创建）
+     * @param skipDrawableCreation 如果为 true，不创建默认的 drawable_
+     */
+    OpenGLRenderer(bool skipDrawableCreation);
+
+    /**
      * 初始化 OpenGL 渲染环境
      */
     virtual bool initializeGL();
@@ -98,6 +104,11 @@ protected:
      * 更新颜色空间参数
      */
     virtual void updateColorSpace(const Frame &frame);
+
+    /**
+     * 初始化 drawable 的通用设置（供派生类调用）
+     */
+    void initDrawableSettings();
 
     OpenGLCommon *drawable_ = nullptr; // OpenGL 渲染核心
     QWidget *target_ = nullptr;        // 渲染目标窗口
