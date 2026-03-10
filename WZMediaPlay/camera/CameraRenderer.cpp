@@ -14,9 +14,9 @@ extern spdlog::logger *logger;
 
 // 简单的 vertex shader（与 FFmpegView 兼容）
 static const char* cameraVertexShader = R"(
-#version 330 core
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec2 aTexCoord;
+#version 150 core
+in vec3 aPos;
+in vec2 aTexCoord;
 
 out vec2 TexCoord;
 
@@ -30,7 +30,7 @@ void main()
 // 简单的 fragment shader（用于 Camera 渲染）
 // 注意：如果使用 GL_BGRA 格式上传纹理，需要在 Shader 中转换回 RGBA
 static const char* cameraFragmentShader = R"(
-#version 330 core
+#version 150 core
 out vec4 FragColor;
 
 in vec2 TexCoord;

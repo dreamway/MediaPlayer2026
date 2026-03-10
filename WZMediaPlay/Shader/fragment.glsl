@@ -1,6 +1,5 @@
-#version 330 core
+#version 150 core
 out vec4 FragColor;
-layout(origin_upper_left) in vec4 gl_FragCoord;  //��ԭ��ĳ����Ͻǣ�����ͨ�������½� ( ����Ĭ������ϵ )
 
 in vec2 TexCoord;
 
