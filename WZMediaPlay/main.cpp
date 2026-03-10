@@ -4,9 +4,11 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
 #include <QMovie>
 #include <QSplashScreen>
 #include <QThread>
+#include <QTimer>
 #include <QtWidgets/QApplication>
 #include <QSurfaceFormat>
 
@@ -78,6 +80,19 @@ int main(int argc, char *argv[])
 
     RemoteControlServer mRemoteControlServer(&w);
     QObject::connect(&mRemoteControlServer, &RemoteControlServer::sendCMD, &w, &MainWindow::broadcastCallback);
+
+    // 处理命令行参数：如果传入了视频文件，则打开它
+    QStringList args = a.arguments();
+    if (args.size() > 1) {
+        QString videoPath = args.at(1);
+        QFileInfo fileInfo(videoPath);
+        if (fileInfo.exists() && fileInfo.isFile()) {
+            // 延迟一点让窗口完全初始化
+            QTimer::singleShot(100, [&w, videoPath]() {
+                w.openVideoFromCommandLine(videoPath);
+            });
+        }
+    }
 
     return a.exec();
 }

@@ -1464,13 +1464,14 @@ void PlayController::onDemuxerThreadSeekFinished(int64_t positionUs)
         return; // 已经处理过，避免重复处理
     }
 
-    // 验证seeking位置是否有效（避免发送错误的UI更新）
-    // 如果positionUs为0，可能是中间seeking操作，不应该更新UI
+    // 验证seeking位置是否有效
+    // 如果positionUs为0，可能是视频开头位置或中间状态，仍然需要退出seeking状态
     if (positionUs == 0 && wasSeeking) {
         SPDLOG_LOGGER_WARN(
-            logger, "PlayController::onDemuxerThreadSeekFinished: Ignoring seekFinished signal with positionUs=0 (likely intermediate seek operation)");
-        // 不转换状态，等待最终的seeking完成
-        return;
+            logger, "PlayController::onDemuxerThreadSeekFinished: seekFinished with positionUs=0, using minimum position (1us) to exit seeking state");
+
+        // 使用最小有效位置（1微秒），确保能正确退出 seeking 状态
+        positionUs = 1;
     }
 
     // 同步音视频时钟到实际的目标位置

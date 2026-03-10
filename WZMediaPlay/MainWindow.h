@@ -29,6 +29,9 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    // 从命令行参数打开视频文件
+    void openVideoFromCommandLine(const QString &videoPath);
+
 protected:
     void mouseDoubleClickEvent(QMouseEvent *event);
     void keyPressEvent(QKeyEvent *event);
@@ -193,6 +196,7 @@ private:
     QString mLastSubtitleFn;
     QString mLastMovieFn;
     bool checkFileIsVideo(QString path);
+    bool isOpeningFromCommandLine_ = false;  // 标记是否正在从命令行打开视频
 
 private:
     Ui::MainWindowClass ui;
@@ -211,7 +215,7 @@ private:
     QActionGroup *outputActionGroup;
     QActionGroup *playOrderActionGroup;
 
-    StereoFormat mStereoFormat = StereoFormat::STEREO_FORMAT_3D;
+    StereoFormat mStereoFormat = StereoFormat::STEREO_FORMAT_NORMAL_2D;  // 默认使用 2D 模式，便于调试
     StereoInputFormat mStereoInputFormat = StereoInputFormat::STEREO_INPUT_FORMAT_LR;
     StereoOutputFormat mStereoOutputFormat = StereoOutputFormat::STEREO_OUTPUT_FORMAT_HORIZONTAL;
     StereoOutputFormat mStereoOutputFormatWhenSwitch2D = mStereoOutputFormat;

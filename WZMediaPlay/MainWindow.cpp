@@ -851,6 +851,8 @@ void MainWindow::initUI()
         staList << QString(tr("3D立体")) << QString(tr("2D左视图")) << QString(tr("2D原视频"));
         ui.comboBox_src2D_3D2D->addItems(staList);
         connect(ui.comboBox_src2D_3D2D, &UpShowComboBox::currentIndexChanged, this, &MainWindow::on_comboBox_src2D_3D2D_currentIndexChanged);
+        // 默认设置为 2D 原视频模式（索引 2），便于调试基本渲染
+        ui.comboBox_src2D_3D2D->setCurrentIndex(2);
         ui.comboBox_3D_input->setCurrentIndex(0);
     }
     //  input comboBox
@@ -1068,6 +1070,27 @@ void MainWindow::openFile()
         currentElapsedInSeconds_ = 0;
         openPath(filepath);
     }
+}
+
+void MainWindow::openVideoFromCommandLine(const QString &videoPath)
+{
+    if (logger) {
+        logger->info("openVideoFromCommandLine: Opening video from command line: {}", videoPath.toStdString());
+    }
+
+    QFileInfo fileInfo(videoPath);
+    if (!fileInfo.exists()) {
+        if (logger) {
+            logger->error("openVideoFromCommandLine: File does not exist: {}", videoPath.toStdString());
+        }
+        return;
+    }
+
+    // 设置标志，防止 replayCurrentItemChanged 干扰
+    isOpeningFromCommandLine_ = true;
+
+    currentElapsedInSeconds_ = 0;
+    openPath(videoPath);
 }
 
 /**
@@ -2964,8 +2987,37 @@ void MainWindow::reply_listWidget_playlist_itemSelectionChanged(QListWidgetItem 
 
 void MainWindow::replayCurrentItemChanged(QListWidgetItem *current, QListWidgetItem *previous)
 {
+    Q_UNUSED(previous);
+    // 如果正在从命令行打开视频，跳过此处理
+    if (isOpeningFromCommandLine_) {
+        isOpeningFromCommandLine_ = false;  // 重置标志
+        return;
+    }
+
     if (current) {
         logger->info("################3333333333 replayCurrentItemChanged. current:{}", current->text().toStdString());
+
+        // 获取当前播放列表项对应的视频文件路径
+        int currentRow = ui.listWidget_playlist->row(current);
+        int tabIndex = ui.tabWidget_playList->currentIndex();
+
+        if (tabIndex >= 0 && tabIndex < GlobalDef::getInstance()->PLAY_LIST_DATA.play_list.size()) {
+            const auto& videoList = GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[tabIndex].video_list;
+            if (currentRow >= 0 && currentRow < videoList.size()) {
+                QString videoPath = videoList[currentRow].video_path;
+                logger->info("replayCurrentItemChanged: Opening video: {}", videoPath.toStdString());
+
+                // 停止当前播放并打开新视频
+                if (playController_) {
+                    playController_->stop();
+                    if (playController_->open(videoPath)) {
+                        playController_->play();
+                    } else {
+                        logger->error("replayCurrentItemChanged: Failed to open video: {}", videoPath.toStdString());
+                    }
+                }
+            }
+        }
     }
 }
 

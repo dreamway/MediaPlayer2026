@@ -29,7 +29,7 @@ class BasicPlaybackTest(TestBase):
             self.end_test(test_name, False, "应用未运行")
             return False
 
-        if not self.window_controller or not self.window_controller.main_window:
+        if not self.window_controller or not self.window_controller.get_main_window():
             self.end_test(test_name, False, "无法获取主窗口")
             return False
 

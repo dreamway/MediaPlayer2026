@@ -16,9 +16,9 @@
 //   #ifdef ENABLE_VIDEO_TRACE
 //       // 调试图片保存代码
 //   #endif
-//#ifndef ENABLE_VIDEO_TRACE
-//#define ENABLE_VIDEO_TRACE 0 // 默认关闭，Release 版本设为 0
-//#endif
+#ifndef ENABLE_VIDEO_TRACE
+#define ENABLE_VIDEO_TRACE 1 // 启用以调试渲染问题
+#endif
 
 #ifndef SPDLOG_ACTIVE_LEVEL
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE

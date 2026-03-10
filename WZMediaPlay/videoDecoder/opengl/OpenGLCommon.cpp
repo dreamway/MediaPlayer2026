@@ -133,9 +133,9 @@ void OpenGLCommon::initialize(const std::shared_ptr<void> &hwInterop)
 
     isOK = true;
 
-    // 默认使用 3 个平面（YUV420P）或 2 个平面（NV12）
-    // hardware_decoder 输出 NV12，所以使用 2 个平面
-    numPlanes = 2;  // NV12 格式
+    // 默认使用 3 个平面（YUV420P/YUV444P）
+    // hardware_decoder 输出 NV12，但视频可能是 YUV420P 或 YUV444P
+    numPlanes = 3;  // 默认 YUV420P/YUV444P 格式
     target = GL_TEXTURE_2D;
 
     const bool windowContext = makeContextCurrent();
@@ -397,8 +397,9 @@ void OpenGLCommon::paintGL()
             };
             const int bytesMultiplier = (m_depth + 7) / 8;
             const GLenum dataType = (bytesMultiplier == 1) ? GL_UNSIGNED_BYTE : GL_UNSIGNED_SHORT;
-            const GLint internalFmt = (bytesMultiplier == 1) ? GL_LUMINANCE : GL_R16;
-            const GLenum fmt = (bytesMultiplier == 1) ? GL_LUMINANCE : GL_RED;
+            // OpenGL 3.3 Core Profile 不支持 GL_LUMINANCE，使用 GL_RED/GL_R8 替代
+            const GLint internalFmt = (bytesMultiplier == 1) ? GL_R8 : GL_R16;
+            const GLenum fmt = GL_RED;
 
             if (doReset) {
                 // 简化设计：不再使用硬件互操作，直接使用软件帧路径

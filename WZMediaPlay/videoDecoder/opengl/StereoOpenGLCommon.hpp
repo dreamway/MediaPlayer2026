@@ -20,6 +20,7 @@
 
 #include "OpenGLCommon.hpp"
 #include "../../GlobalDef.h"
+#include <QOpenGLVertexArrayObject>
 
 /**
  * StereoOpenGLCommon: 支持 3D 立体渲染的 OpenGL Common
@@ -82,4 +83,12 @@ private:
     
     // 异步图片保存器（用于保存调试图片，避免影响渲染性能）
     class DebugImageSaver* debugImageSaver_;
+
+    // VAO (Vertex Array Object) - OpenGL Core Profile 必需
+    QOpenGLVertexArrayObject m_vao;
+
+    // VBO (Vertex Buffer Object) - OpenGL Core Profile 必需，用于存储顶点数据
+    quint32 m_vboPosition = 0;  // 位置 VBO
+    quint32 m_vboTexCoord = 0;  // 纹理坐标 VBO
+    bool m_vboInitialized = false;  // VBO 是否已初始化
 };

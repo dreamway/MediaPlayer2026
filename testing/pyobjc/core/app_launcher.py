@@ -123,6 +123,11 @@ class AppLauncher:
         Returns:
             bool: True if the application is running.
         """
+        # First check our subprocess
+        if self._process is not None and self._process.poll() is None:
+            self._pid = self._process.pid
+            return True
+
         # Get the app name from path
         app_name = self.app_path.split("/")[-1]
 
@@ -135,10 +140,6 @@ class AppLauncher:
                 self._running_app = app
                 self._pid = app.processIdentifier()
                 return True
-
-        # Also check our subprocess
-        if self._process is not None:
-            return self._process.poll() is None
 
         return False
 

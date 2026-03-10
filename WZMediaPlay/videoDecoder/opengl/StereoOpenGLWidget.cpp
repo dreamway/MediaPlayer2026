@@ -54,11 +54,25 @@ void StereoOpenGLWidget::updateGL(bool requestDelayed)
 {
     // 检查 widget 是否有效和可见（避免在销毁过程中调用）
     if (!this || !isVisible()) {
+        static int invisibleCount = 0;
+        if (invisibleCount < 5) {  // 只输出前5次，避免日志过多
+            if (logger) {
+                logger->warn("StereoOpenGLWidget::updateGL: Widget not visible (isVisible={}, this={})", isVisible(), (void*)this);
+            }
+            invisibleCount++;
+        }
         return;
     }
 
     // 检查 OpenGL 上下文是否有效（避免在上下文销毁后调用）
     if (!context() || !context()->isValid()) {
+        static int invalidContextCount = 0;
+        if (invalidContextCount < 5) {
+            if (logger) {
+                logger->warn("StereoOpenGLWidget::updateGL: OpenGL context invalid");
+            }
+            invalidContextCount++;
+        }
         return;
     }
 

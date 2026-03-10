@@ -16,7 +16,10 @@ uniform int iParallaxOffset;
 uniform sampler2D textureY;
 uniform sampler2D textureU;
 uniform sampler2D textureV;
-uniform sampler2D textureUV;
+uniform sampler2D textureUV;  // NV12 格式的 UV 交织纹理
+
+// 视频格式：0=RGB, 1=NV12, 2=YUV420P
+uniform int iVideoFormat;
 
 vec3 normal_2d(sampler2D inputTexture, vec2 TexCoord) {
 	vec3 rgb = texture(inputTexture, TexCoord).xyz;
@@ -662,13 +665,25 @@ void main()
 		// Y值范围：16-235 (limited range) -> 0.0625-0.918，需要减去0.0625
 		// U/V值范围：16-240 (centered at 128) -> 0.0625-0.938，需要减去0.5
 		vec3 yuv, rgb;
-		
-		// 获取YUV值（纹理采样返回0-1范围的值）
+
+		// 获取Y值（所有格式都从 textureY 采样）
 		// GL_LUMINANCE格式会自动将0-255归一化到0-1
 		float y = stereo_display(textureY, TexCoord, iStereoFlag, iStereoInputFormat, iStereoOutputFormat, bEnableRegion, region, iParallaxOffset).r;
-		float u = stereo_display(textureU, TexCoord, iStereoFlag, iStereoInputFormat, iStereoOutputFormat, bEnableRegion, region, iParallaxOffset).r;
-		float v = stereo_display(textureV, TexCoord, iStereoFlag, iStereoInputFormat, iStereoOutputFormat, bEnableRegion, region, iParallaxOffset).r;
-		
+
+		// 根据 iVideoFormat 区分 NV12 和 YUV420P 格式
+		// iVideoFormat: 0=RGB, 1=NV12, 2=YUV420P
+		float u, v;
+		if (iVideoFormat == 1) {
+			// NV12 格式：UV 交织在一个纹理中，.r=U, .g=V
+			vec2 uv = stereo_display(textureUV, TexCoord, iStereoFlag, iStereoInputFormat, iStereoOutputFormat, bEnableRegion, region, iParallaxOffset).rg;
+			u = uv.r;
+			v = uv.g;
+		} else {
+			// YUV420P 格式：U 和 V 是独立的纹理
+			u = stereo_display(textureU, TexCoord, iStereoFlag, iStereoInputFormat, iStereoOutputFormat, bEnableRegion, region, iParallaxOffset).r;
+			v = stereo_display(textureV, TexCoord, iStereoFlag, iStereoInputFormat, iStereoOutputFormat, bEnableRegion, region, iParallaxOffset).r;
+		}
+
 		// YUV到RGB转换（BT.601标准）
 		// 注意：GL_LUMINANCE格式已经将0-255归一化到0-1
 		// Limited range: Y在16-235，U/V在16-240（centered at 128）
@@ -676,7 +691,7 @@ void main()
 		yuv.x = y - 0.0625;  // Y: limited range (16-235) -> 减去16/256
 		yuv.y = u - 0.5;     // U 分量
 		yuv.z = v - 0.5;     // V 分量
-		
+
 		// BT.601 YUV到RGB转换矩阵
 		// R = Y + 1.402 * (V - 0.5)
 		// G = Y - 0.344 * (U - 0.5) - 0.714 * (V - 0.5)
@@ -688,11 +703,11 @@ void main()
 		vec3 yuv2r = vec3(1.164, 0.0, 1.596);
 		vec3 yuv2g = vec3(1.164, -0.391, -0.813);
 		vec3 yuv2b = vec3(1.164, 2.018, 0.0);
-	
+
 		rgb.x = dot(yuv, yuv2r);
 		rgb.y = dot(yuv, yuv2g);
 		rgb.z = dot(yuv, yuv2b);
-		
+
 		// 限制RGB值在0-1范围内
 		rgb = clamp(rgb, 0.0, 1.0);
 

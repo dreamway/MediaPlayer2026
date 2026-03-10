@@ -48,20 +48,23 @@ StereoOpenGLCommon::~StereoOpenGLCommon()
         debugImageSaver_ = nullptr;
     }
 #endif
+
+    // 删除 VBO (Vertex Buffer Object)
+    if (m_vboPosition != 0) {
+        glDeleteBuffers(1, &m_vboPosition);
+        m_vboPosition = 0;
+    }
+    if (m_vboTexCoord != 0) {
+        glDeleteBuffers(1, &m_vboTexCoord);
+        m_vboTexCoord = 0;
+    }
+    m_vboInitialized = false;
 }
 
 void StereoOpenGLCommon::initializeStereoShader()
 {
     if (m_stereoShaderInitialized)
         return;
-
-    if (numPlanes == 1)
-    {
-        // RGB 格式暂不支持 3D（需要单独的 RGB 3D shader）
-        if (logger) logger->warn("StereoOpenGLCommon: RGB format 3D shader not implemented yet");
-        m_stereoShaderInitialized = true;
-        return;
-    }
 
     shaderProgramStereo.reset(new QOpenGLShaderProgram);
 
@@ -204,6 +207,41 @@ void StereoOpenGLCommon::initializeStereoShader()
         return;
     }
 
+    // 创建并绑定 VAO (Vertex Array Object) - OpenGL Core Profile 必需
+    if (!m_vao.create()) {
+        if (logger) logger->error("StereoOpenGLCommon: Failed to create VAO");
+        m_stereoShaderInitialized = false;
+        return;
+    }
+    m_vao.bind();
+    if (logger) logger->info("StereoOpenGLCommon: VAO created and bound successfully");
+
+    // 创建 VBO (Vertex Buffer Object) - OpenGL Core Profile 必需
+    // 位置 VBO：存储顶点位置数据（4个顶点，每个顶点2个float）
+    glGenBuffers(1, &m_vboPosition);
+    glBindBuffer(GL_ARRAY_BUFFER, m_vboPosition);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, verticesYCbCr[0], GL_DYNAMIC_DRAW);  // 初始化为默认顶点
+
+    // 设置位置顶点属性指针（存储在 VAO 中）
+    glEnableVertexAttribArray(positionYCbCrLoc);
+    glVertexAttribPointer(positionYCbCrLoc, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    // 纹理坐标 VBO：存储纹理坐标数据（4个顶点，每个顶点2个float）
+    glGenBuffers(1, &m_vboTexCoord);
+    glBindBuffer(GL_ARRAY_BUFFER, m_vboTexCoord);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, texCoordYCbCr, GL_STATIC_DRAW);
+
+    // 设置纹理坐标顶点属性指针（存储在 VAO 中）
+    glEnableVertexAttribArray(texCoordYCbCrLoc);
+    glVertexAttribPointer(texCoordYCbCrLoc, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    m_vao.release();  // 解绑 VAO，保存所有顶点属性状态
+    m_vboInitialized = true;
+
+    if (logger) logger->info("StereoOpenGLCommon: VBO created successfully (position: {}, texCoord: {})",
+        m_vboPosition, m_vboTexCoord);
+
     m_stereoShaderInitialized = true;
     if (logger) logger->info("StereoOpenGLCommon: Stereo shader initialized successfully");
 }
@@ -334,13 +372,19 @@ void StereoOpenGLCommon::paintGLStereo()
 
     static int paintGLStereoCounter = 0;
     paintGLStereoCounter++;
-    
+
+    // 输出 info 级别日志来确认 paintGLStereo 被调用（每100次输出一次）
     if (logger && paintGLStereoCounter % 100 == 0) {
-        logger->debug("StereoOpenGLCommon::paintGLStereo: Called {} times, frameIsEmpty: {}, videoFrame.isEmpty(): {}, hasImage: {}, m_stereoFormat: {}, m_stereoShaderInitialized: {}", 
-            paintGLStereoCounter, frameIsEmpty, videoFrame.isEmpty(), hasImage, 
+        logger->info("StereoOpenGLCommon::paintGLStereo: Called {} times, frameIsEmpty: {}, hasImage: {}",
+            paintGLStereoCounter, frameIsEmpty, hasImage);
+    }
+
+    if (logger && paintGLStereoCounter % 100 == 0) {
+        logger->debug("StereoOpenGLCommon::paintGLStereo: Called {} times, frameIsEmpty: {}, videoFrame.isEmpty(): {}, hasImage: {}, m_stereoFormat: {}, m_stereoShaderInitialized: {}",
+            paintGLStereoCounter, frameIsEmpty, videoFrame.isEmpty(), hasImage,
             static_cast<int>(m_stereoFormat), m_stereoShaderInitialized);
         if (!videoFrame.isEmpty()) {
-            logger->debug("StereoOpenGLCommon::paintGLStereo: videoFrame - width: {}, height: {}, planes: {}, isHW: {}", 
+            logger->debug("StereoOpenGLCommon::paintGLStereo: videoFrame - width: {}, height: {}, planes: {}, isHW: {}",
                 videoFrame.width(0), videoFrame.height(0), videoFrame.numPlanes(), videoFrame.isHW());
         }
     }
@@ -362,6 +406,10 @@ void StereoOpenGLCommon::paintGLStereo()
     // 复用父类的纹理上传逻辑（从 OpenGLCommon::paintGL 复制）
     if (!frameIsEmpty)
     {
+        // 根据实际帧格式动态设置 numPlanes
+        numPlanes = videoFrame.numPlanes();
+        if (numPlanes < 2) numPlanes = 3;  // 默认 YUV420P
+
         const GLsizei widths[3] = {
             videoFrame.width(0),
             videoFrame.width(1),
@@ -372,10 +420,18 @@ void StereoOpenGLCommon::paintGLStereo()
             videoFrame.height(1),
             videoFrame.height(2),
         };
+
+        // 诊断日志
+        if (logger && paintGLStereoCounter % 100 == 0) {
+            logger->info("StereoOpenGLCommon::paintGLStereo: Frame info - numPlanes: {}, Y: {}x{}, U: {}x{}, V: {}x{}, linesize: {}/{}/{}",
+                numPlanes, widths[0], heights[0], widths[1], heights[1], widths[2], heights[2],
+                videoFrame.linesize(0), videoFrame.linesize(1), videoFrame.linesize(2));
+        }
         const int bytesMultiplier = (m_depth + 7) / 8;
         const GLenum dataType = (bytesMultiplier == 1) ? GL_UNSIGNED_BYTE : GL_UNSIGNED_SHORT;
-        const GLint internalFmt = (bytesMultiplier == 1) ? GL_LUMINANCE : GL_R16;
-        const GLenum fmt = (bytesMultiplier == 1) ? GL_LUMINANCE : GL_RED;
+        // OpenGL 3.3 Core Profile 不支持 GL_LUMINANCE，使用 GL_RED/GL_R8 替代
+        const GLint internalFmt = (bytesMultiplier == 1) ? GL_R8 : GL_R16;
+        const GLenum fmt = GL_RED;
 
         if (doReset)
         {
@@ -475,28 +531,63 @@ void StereoOpenGLCommon::paintGLStereo()
     if (!shaderProgramStereo || !hasImage)
     {
         if (logger && paintGLStereoCounter % 100 == 0) {
-            logger->debug("StereoOpenGLCommon::paintGLStereo: Cannot render - shaderProgramStereo: {}, hasImage: {}", 
+            logger->debug("StereoOpenGLCommon::paintGLStereo: Cannot render - shaderProgramStereo: {}, hasImage: {}",
                 shaderProgramStereo != nullptr, hasImage);
         }
         return;
     }
 
+    // 绑定 VAO (Vertex Array Object) - OpenGL Core Profile 必需
+    if (m_vao.isCreated()) {
+        m_vao.bind();
+    } else {
+        if (logger && paintGLStereoCounter % 100 == 0) {
+            logger->error("StereoOpenGLCommon::paintGLStereo: VAO not created");
+        }
+        return;
+    }
+
     // vertex.glsl 使用 vec2 aPos，直接使用 2D 坐标
-    shaderProgramStereo->setAttributeArray(positionYCbCrLoc, verticesYCbCr[verticesIdx], 2);
-    shaderProgramStereo->setAttributeArray(texCoordYCbCrLoc, texCoordYCbCr, 2);
-    
-    shaderProgramStereo->enableAttributeArray(positionYCbCrLoc);
-    shaderProgramStereo->enableAttributeArray(texCoordYCbCrLoc);
+    // 诊断：检查 attribute location 是否有效
+    if (logger && paintGLStereoCounter % 100 == 0) {
+        logger->info("StereoOpenGLCommon::paintGLStereo: Attribute locations - positionYCbCrLoc: {}, texCoordYCbCrLoc: {}",
+            positionYCbCrLoc, texCoordYCbCrLoc);
+    }
+
+    // 更新位置 VBO 数据（如果顶点索引改变）
+    // 注意：顶点属性指针已经存储在 VAO 中，只需要更新 VBO 数据
+    static int lastVerticesIdx = -1;
+    if (lastVerticesIdx != verticesIdx) {
+        glBindBuffer(GL_ARRAY_BUFFER, m_vboPosition);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 8, verticesYCbCr[verticesIdx]);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        lastVerticesIdx = verticesIdx;
+        if (logger && paintGLStereoCounter % 100 == 0) {
+            logger->debug("StereoOpenGLCommon::paintGLStereo: Updated position VBO with verticesIdx: {}", verticesIdx);
+        }
+    }
 
     if (!shaderProgramStereo->bind())
     {
         if (logger) logger->error("StereoOpenGLCommon::paintGLStereo: Failed to bind shader program");
         return;
     }
-    
+
+    // 诊断：检查 shader 绑定后的 OpenGL 错误
+    GLenum err1 = glGetError();
+    if (err1 != GL_NO_ERROR && logger && paintGLStereoCounter % 100 == 0) {
+        logger->error("StereoOpenGLCommon::paintGLStereo: OpenGL error after shader bind: 0x{:X}", err1);
+    }
+
     // 每次渲染时都设置 uniform（不只是 doReset 时）
     // 因为 uniform 值可能会在渲染过程中改变（例如通过 UI 调整）
     setStereoShaderUniforms();
+
+    // 诊断：检查设置 uniform 后的 OpenGL 错误
+    GLenum err2 = glGetError();
+    if (err2 != GL_NO_ERROR && logger && paintGLStereoCounter % 100 == 0) {
+        logger->error("StereoOpenGLCommon::paintGLStereo: OpenGL error after setStereoShaderUniforms: 0x{:X}", err2);
+    }
     
     // 确保纹理已正确绑定到对应的纹理单元
     // 纹理数据应该已经在上面上传了，这里只需要确保绑定状态正确
@@ -524,21 +615,29 @@ void StereoOpenGLCommon::paintGLStereo()
     if (numPlanes == 2)
     {
         shaderProgramStereo->setUniformValue("textureUV", 1);
-        shaderProgramStereo->setUniformValue("textureU", -1);
-        shaderProgramStereo->setUniformValue("textureV", -1);
+        // 注意：不要设置 sampler uniform 为 -1，这可能导致 OpenGL 错误
+        // 对于 NV12 格式，textureU 和 textureV 不会被采样，可以不设置或设置为有效值
+        shaderProgramStereo->setUniformValue("textureU", 1);  // 设置为有效的纹理单元
+        shaderProgramStereo->setUniformValue("textureV", 2);  // 设置为有效的纹理单元
     }
     else if (numPlanes == 3)
     {
         shaderProgramStereo->setUniformValue("textureU", 1);
         shaderProgramStereo->setUniformValue("textureV", 2);
-        shaderProgramStereo->setUniformValue("textureUV", -1);
+        shaderProgramStereo->setUniformValue("textureUV", 0);  // 设置为有效的纹理单元
     }
     else
     {
         // 单平面格式（RGB），只使用 textureY
-        shaderProgramStereo->setUniformValue("textureU", -1);
-        shaderProgramStereo->setUniformValue("textureV", -1);
-        shaderProgramStereo->setUniformValue("textureUV", -1);
+        shaderProgramStereo->setUniformValue("textureU", 0);
+        shaderProgramStereo->setUniformValue("textureV", 0);
+        shaderProgramStereo->setUniformValue("textureUV", 0);
+    }
+
+    // 诊断：检查设置纹理 uniform 后的 OpenGL 错误
+    GLenum err3 = glGetError();
+    if (err3 != GL_NO_ERROR && logger && paintGLStereoCounter % 100 == 0) {
+        logger->error("StereoOpenGLCommon::paintGLStereo: OpenGL error after texture uniforms: 0x{:X}", err3);
     }
     
     // fragment.glsl 不使用 uMatrix，vertex.glsl 也不使用，所以不需要设置
@@ -564,29 +663,54 @@ void StereoOpenGLCommon::paintGLStereo()
     }
     
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    
-    if (logger && paintGLStereoCounter % 100 == 0) {
-        logger->debug("StereoOpenGLCommon::paintGLStereo: glDrawArrays completed");
+
+    // 检查 OpenGL 错误 - 详细版本
+    GLenum glError = glGetError();
+    if (glError != GL_NO_ERROR && logger && paintGLStereoCounter % 100 == 0) {
+        QString errorStr;
+        switch (glError) {
+            case GL_INVALID_ENUM: errorStr = "GL_INVALID_ENUM"; break;
+            case GL_INVALID_VALUE: errorStr = "GL_INVALID_VALUE"; break;
+            case GL_INVALID_OPERATION: errorStr = "GL_INVALID_OPERATION"; break;
+            case GL_OUT_OF_MEMORY: errorStr = "GL_OUT_OF_MEMORY"; break;
+            default: errorStr = QString("Unknown: 0x%1").arg(glError, 4, 16, QChar('0')); break;
+        }
+        logger->error("StereoOpenGLCommon::paintGLStereo: OpenGL error after glDrawArrays: {} (0x{:X})",
+            errorStr.toStdString(), glError);
     }
-   
+
+    if (logger && paintGLStereoCounter % 100 == 0) {
+        logger->info("StereoOpenGLCommon::paintGLStereo: glDrawArrays completed, numPlanes: {}, viewport: {}x{}, textures: {}/{}/{}",
+            numPlanes, viewport[2], viewport[3], textures[1], textures[2], textures[3]);
+    }
+
     shaderProgramStereo->release();
 
-    shaderProgramStereo->disableAttributeArray(texCoordYCbCrLoc);
-    shaderProgramStereo->disableAttributeArray(positionYCbCrLoc);
+    // 释放 VAO（顶点属性状态存储在 VAO 中，不需要单独清理）
+    m_vao.release();
 }
 
 void StereoOpenGLCommon::setStereoShaderUniforms()
 {
     if (!shaderProgramStereo)
         return;
-    
+
     // 注意：这个方法应该在 shader 已经 bind 的情况下调用
     // 调用者（paintGLStereo）已经 bind 了 shader，所以这里不需要再次 bind
 
     // 设置 fragment.glsl 中使用的 uniform（只设置实际存在的）
     // iRenderInputSource: 0 = VideoFile, 1 = Camera（暂时固定为 0，因为 Camera 渲染由 CameraRenderer 处理）
     shaderProgramStereo->setUniformValue("iRenderInputSource", 0);
-    
+
+    // 设置视频格式 uniform：0=RGB, 1=NV12, 2=YUV420P
+    int videoFormat = 0; // 默认 RGB
+    if (numPlanes == 2) {
+        videoFormat = 1; // NV12
+    } else if (numPlanes == 3) {
+        videoFormat = 2; // YUV420P
+    }
+    shaderProgramStereo->setUniformValue("iVideoFormat", videoFormat);
+
     // 3D uniform 参数
     shaderProgramStereo->setUniformValue("iStereoFlag", m_stereoFormat == STEREO_FORMAT_3D ? 1 : 0);
     shaderProgramStereo->setUniformValue("iStereoInputFormat", static_cast<int>(m_stereoInputFormat));
@@ -594,22 +718,36 @@ void StereoOpenGLCommon::setStereoShaderUniforms()
     shaderProgramStereo->setUniformValue("bEnableRegion", m_enableStereoRegion);
     shaderProgramStereo->setUniformValue("VecRegion", QVector4D(m_stereoRegion[0], m_stereoRegion[1], m_stereoRegion[2], m_stereoRegion[3]));
     shaderProgramStereo->setUniformValue("iParallaxOffset", m_parallaxShift);
-    
+
     // 注意：还原后的shader使用硬编码的YUV到RGB转换系数，不再需要iVideoFormat和uYUVtRGB uniform
-    
+
     // 检查 uniform 设置是否成功（用于调试，每100次检查一次）
     static int uniformCheckCounter = 0;
     uniformCheckCounter++;
-    if (logger && uniformCheckCounter % 100 == 0) {
+    if (logger && uniformCheckCounter % 10 == 0) {
         int uniformLoc = shaderProgramStereo->uniformLocation("iStereoFlag");
         if (uniformLoc < 0) {
             logger->warn("StereoOpenGLCommon::setStereoShaderUniforms: Uniform iStereoFlag not found in shader");
+        } else {
+            // 获取实际的 uniform 值
+            int stereoFlagValue = 0;
+            glGetUniformiv(shaderProgramStereo->programId(), uniformLoc, &stereoFlagValue);
+            logger->info("StereoOpenGLCommon::setStereoShaderUniforms: iStereoFlag = {} (m_stereoFormat = {}, STEREO_FORMAT_3D would be 1)",
+                stereoFlagValue, static_cast<int>(m_stereoFormat));
         }
         uniformLoc = shaderProgramStereo->uniformLocation("textureY");
         if (uniformLoc < 0) {
             logger->warn("StereoOpenGLCommon::setStereoShaderUniforms: Uniform textureY not found in shader");
         } else {
             logger->debug("StereoOpenGLCommon::setStereoShaderUniforms: Uniform textureY location: {}", uniformLoc);
+        }
+        uniformLoc = shaderProgramStereo->uniformLocation("iVideoFormat");
+        if (uniformLoc < 0) {
+            logger->warn("StereoOpenGLCommon::setStereoShaderUniforms: Uniform iVideoFormat not found in shader");
+        } else {
+            int videoFormatValue = 0;
+            glGetUniformiv(shaderProgramStereo->programId(), uniformLoc, &videoFormatValue);
+            logger->info("StereoOpenGLCommon::setStereoShaderUniforms: iVideoFormat = {} (numPlanes = {})", videoFormatValue, numPlanes);
         }
     }
 }
