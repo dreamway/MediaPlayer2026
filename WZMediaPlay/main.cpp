@@ -8,6 +8,7 @@
 #include <QSplashScreen>
 #include <QThread>
 #include <QtWidgets/QApplication>
+#include <QSurfaceFormat>
 
 #include "ApplicationSettings.h"
 #include <QRandomGenerator>
@@ -21,7 +22,18 @@ int main(int argc, char *argv[])
 {
     // 初始化崩溃处理器（必须在QApplication之前，跨平台支持）
     CrashHandler::initialize();
-    
+
+    // 设置 OpenGL 默认格式（必须在 QApplication 之前）
+    // macOS OpenGL 4.1 支持 GLSL 150，使用 Core Profile
+    QSurfaceFormat format;
+    format.setRenderableType(QSurfaceFormat::OpenGL);
+    format.setProfile(QSurfaceFormat::CoreProfile);
+    format.setVersion(4, 1);  // macOS 最高支持 OpenGL 4.1
+    format.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+    format.setDepthBufferSize(24);
+    format.setStencilBufferSize(8);
+    QSurfaceFormat::setDefaultFormat(format);
+
     QApplication a(argc, argv);
     MainWindow w;
     w.setMinimumSize(QSize(800, 600));
