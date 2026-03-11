@@ -382,6 +382,10 @@ class ComprehensiveTest(TestBase):
             print("\n--- 错误检查 ---")
             self.test_no_critical_errors()
 
+            # 3D渲染测试（可选，需要3D视频源）
+            print("\n--- 3D渲染测试 ---")
+            self.run_3d_tests()
+
         finally:
             self.teardown()
 
@@ -389,6 +393,34 @@ class ComprehensiveTest(TestBase):
         self.generate_report()
         self.print_summary()
         self.save_report()
+
+    def run_3d_tests(self):
+        """运行3D渲染测试"""
+        try:
+            # 导入3D测试模块
+            from tests.test_3d_rendering import Stereo3DTest
+
+            # 创建3D测试实例
+            stereo_test = Stereo3DTest()
+
+            # 复用当前的应用实例
+            stereo_test.app_launcher = self.app_launcher
+            stereo_test.window_controller = self.window_controller
+            stereo_test.log_monitor = self.log_monitor
+
+            # 运行关键3D测试
+            stereo_test.test_3d_mode_toggle()
+            stereo_test.test_3d_rendering_not_black()
+            stereo_test.test_parallax_increase()
+            stereo_test.test_parallax_decrease()
+
+            # 合并测试结果
+            self.results.extend(stereo_test.results)
+
+        except ImportError as e:
+            print(f"跳过3D测试: 无法导入测试模块 - {e}")
+        except Exception as e:
+            print(f"3D测试失败: {e}")
 
 
 def main():

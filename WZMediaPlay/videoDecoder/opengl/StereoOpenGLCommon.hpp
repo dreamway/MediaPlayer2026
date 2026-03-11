@@ -60,6 +60,16 @@ protected:
 
     // 使用 3D shader 进行渲染
     void paintGLStereo();
+
+    // 计算动态顶点坐标（参考v1.0.8 FFmpegView::programDraw）
+    // 根据视频宽高比动态调整顶点，保持正确的显示比例
+    void updateDynamicVertices(int frameWidth, int frameHeight);
+
+    // 设置全屏Plus模式（拉伸显示）
+    void setFullscreenPlusStretch(bool stretch) { m_fullscreenPlusStretch = stretch; }
+
+    // 切换视差调节时的裁剪效果
+    void toggleStripParallaxSideView() { m_enableStripParallaxSideView = !m_enableStripParallaxSideView; }
     
     // 切换使用默认 2D Shader（用于调试对比，继承自 OpenGLCommon）
     // void setUseDefault2DShader(bool use);  // 继承自 OpenGLCommon
@@ -87,8 +97,39 @@ private:
     // VAO (Vertex Array Object) - OpenGL Core Profile 必需
     QOpenGLVertexArrayObject m_vao;
 
-    // VBO (Vertex Buffer Object) - OpenGL Core Profile 必需，用于存储顶点数据
-    quint32 m_vboPosition = 0;  // 位置 VBO
-    quint32 m_vboTexCoord = 0;  // 纹理坐标 VBO
+    // VBO (Vertex Buffer Object) - 使用交错数组格式，参考v1.0.8
+    // 每个顶点5个float: {x, y, z, tex_x, tex_y}
+    quint32 m_vbo = 0;
+
+    // EBO (Element Buffer Object) - 索引缓冲
+    quint32 m_ebo = 0;
+
+    // 顶点数据（交错数组，20个float = 4顶点 * 5float/顶点）
+    float m_vertices[20];
+
+    // 索引数据（6个索引 = 2三角形 * 3顶点/三角形）
+    static constexpr unsigned int m_indices[6] = {
+        0, 1, 3,  // 第一个三角形
+        1, 2, 3   // 第二个三角形
+    };
+
     bool m_vboInitialized = false;  // VBO 是否已初始化
+
+    // === 动态顶点计算相关成员（参考v1.0.8 FFmpegView实现） ===
+    // 视口尺寸
+    int m_viewWidth = 300;
+    int m_viewHeight = 200;
+
+    // 纹理尺寸
+    int m_texWidth = -1;
+    int m_texHeight = -1;
+
+    // 宽高比
+    float m_ratio = 1.0f;
+
+    // 是否启用视差调节时的裁剪效果
+    bool m_enableStripParallaxSideView = true;
+
+    // 全屏Plus模式（拉伸显示）
+    bool m_fullscreenPlusStretch = false;
 };

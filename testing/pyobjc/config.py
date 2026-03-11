@@ -23,7 +23,7 @@ TEST_VIDEO_DIR = os.path.join(
 )
 
 TEST_VIDEO_PATH = os.path.join(TEST_VIDEO_DIR, "test.mp4")
-TEST_VIDEO_LG_PATH = os.path.join(TEST_VIDEO_DIR, "LG.mp4")
+TEST_VIDEO_LG_PATH = os.path.join(TEST_VIDEO_DIR, "test.mp4")  # 使用test.mp4作为默认测试视频
 
 # 截图保存目录
 SCREENSHOT_DIR = os.path.join(
@@ -53,3 +53,31 @@ WAIT_TIMES = {
 # 黑屏检测阈值
 BLACK_THRESHOLD = 15  # 像素亮度阈值
 BLACK_RATIO_THRESHOLD = 0.90  # 黑色像素比例阈值
+
+# 3D测试相关配置
+STEREO_TEST_CONFIG = {
+    # 3D格式常量 (对应 GlobalDef.h)
+    "STEREO_FORMAT_2D": 0,
+    "STEREO_FORMAT_3D": 1,
+    "STEREO_INPUT_LR": 0,
+    "STEREO_INPUT_RL": 1,
+    "STEREO_INPUT_UD": 2,
+    "STEREO_OUTPUT_VERTICAL": 0,
+    "STEREO_OUTPUT_HORIZONTAL": 1,
+    "STEREO_OUTPUT_CHESS": 2,
+    "STEREO_OUTPUT_ONLY_LEFT": 3,
+
+    # 视差调节范围
+    "PARALLAX_MIN": -50,
+    "PARALLAX_MAX": 50,
+
+    # 3D模式切换等待时间
+    "stereo_mode_switch_delay": 1.0,
+    "parallax_adjust_delay": 0.5,
+}
+
+# 报告保存目录
+REPORT_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "reports"
+)

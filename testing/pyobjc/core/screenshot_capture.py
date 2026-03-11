@@ -59,6 +59,18 @@ class ScreenshotCapture:
         )
         os.makedirs(self.output_dir, exist_ok=True)
 
+        # 获取屏幕尺寸
+        self.screen_width = 1920  # 默认值
+        self.screen_height = 1080  # 默认值
+        try:
+            # 尝试获取实际屏幕尺寸
+            from AppKit import NSScreen
+            screen = NSScreen.mainScreen()
+            self.screen_width = int(screen.frame().size.width)
+            self.screen_height = int(screen.frame().size.height)
+        except Exception:
+            pass  # 使用默认值
+
     def capture_window_by_title(self, window_title: str, save_path: str = None) -> str:
         """
         通过窗口标题捕获窗口截图
@@ -213,6 +225,10 @@ class ImageAnalyzer:
                 b_sum += b
 
             return {
+                'r_avg': r_sum / total,
+                'g_avg': g_sum / total,
+                'b_avg': b_sum / total,
+                'brightness': (r_sum + g_sum + b_sum) / (3 * total),
                 'avg_r': r_sum / total,
                 'avg_g': g_sum / total,
                 'avg_b': b_sum / total,
@@ -221,6 +237,75 @@ class ImageAnalyzer:
 
         except Exception as e:
             raise Exception(f"Failed to analyze colors: {e}")
+
+    @staticmethod
+    def detect_video_bounds(image_path: str, black_threshold: int = 30) -> dict:
+        """
+        检测图像中视频区域的边界（通过检测黑边）
+
+        Args:
+            image_path: 图像路径
+            black_threshold: 黑色阈值 (0-255)
+
+        Returns:
+            dict: 视频区域边界 {'left', 'top', 'right', 'bottom'}
+                  如果无法检测则返回 None
+        """
+        try:
+            img = Image.open(image_path)
+            gray = img.convert('L')
+            width, height = gray.size
+            pixels = gray.load()
+
+            # 从四个方向检测黑边
+            # 从上边检测
+            top = 0
+            for y in range(height):
+                row_brightness = sum(pixels[x, y] for x in range(width)) / width
+                if row_brightness > black_threshold:
+                    top = y
+                    break
+
+            # 从下边检测
+            bottom = height - 1
+            for y in range(height - 1, -1, -1):
+                row_brightness = sum(pixels[x, y] for x in range(width)) / width
+                if row_brightness > black_threshold:
+                    bottom = y
+                    break
+
+            # 从左边检测
+            left = 0
+            for x in range(width):
+                col_brightness = sum(pixels[x, y] for y in range(height)) / height
+                if col_brightness > black_threshold:
+                    left = x
+                    break
+
+            # 从右边检测
+            right = width - 1
+            for x in range(width - 1, -1, -1):
+                col_brightness = sum(pixels[x, y] for y in range(height)) / height
+                if col_brightness > black_threshold:
+                    right = x
+                    break
+
+            # 确保边界有效
+            if left >= right or top >= bottom:
+                return None
+
+            return {
+                'left': left,
+                'top': top,
+                'right': right,
+                'bottom': bottom,
+                'width': right - left,
+                'height': bottom - top
+            }
+
+        except Exception as e:
+            print(f"Failed to detect video bounds: {e}")
+            return None
 
     @staticmethod
     def compare_images(image1_path: str, image2_path: str) -> float:

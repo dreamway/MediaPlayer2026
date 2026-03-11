@@ -23,6 +23,7 @@
 #include <QTextStream>
 #include <QIODevice>
 #include <cstring>
+#include <cmath>  // for std::abs
 
 extern spdlog::logger *logger;
 
@@ -49,14 +50,14 @@ StereoOpenGLCommon::~StereoOpenGLCommon()
     }
 #endif
 
-    // 删除 VBO (Vertex Buffer Object)
-    if (m_vboPosition != 0) {
-        glDeleteBuffers(1, &m_vboPosition);
-        m_vboPosition = 0;
+    // 删除 VBO 和 EBO
+    if (m_vbo != 0) {
+        glDeleteBuffers(1, &m_vbo);
+        m_vbo = 0;
     }
-    if (m_vboTexCoord != 0) {
-        glDeleteBuffers(1, &m_vboTexCoord);
-        m_vboTexCoord = 0;
+    if (m_ebo != 0) {
+        glDeleteBuffers(1, &m_ebo);
+        m_ebo = 0;
     }
     m_vboInitialized = false;
 }
@@ -216,31 +217,43 @@ void StereoOpenGLCommon::initializeStereoShader()
     m_vao.bind();
     if (logger) logger->info("StereoOpenGLCommon: VAO created and bound successfully");
 
-    // 创建 VBO (Vertex Buffer Object) - OpenGL Core Profile 必需
-    // 位置 VBO：存储顶点位置数据（4个顶点，每个顶点2个float）
-    glGenBuffers(1, &m_vboPosition);
-    glBindBuffer(GL_ARRAY_BUFFER, m_vboPosition);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, verticesYCbCr[0], GL_DYNAMIC_DRAW);  // 初始化为默认顶点
+    // === 初始化默认顶点数据（参考v1.0.8 FFmpegView.h:207-212） ===
+    // 交错数组格式：每个顶点5个float {x, y, z, tex_x, tex_y}
+    // 顶点顺序：右上, 右下, 左下, 左上（与v1.0.8一致）
+    m_vertices[0]  =  1.0f; m_vertices[1]  =  1.0f; m_vertices[2]  = 0.0f;  // 右上 位置
+    m_vertices[3]  =  1.0f; m_vertices[4]  = 0.0f;                         // 右上 纹理
+    m_vertices[5]  =  1.0f; m_vertices[6]  = -1.0f; m_vertices[7]  = 0.0f;  // 右下 位置
+    m_vertices[8]  =  1.0f; m_vertices[9]  = 1.0f;                         // 右下 纹理
+    m_vertices[10] = -1.0f; m_vertices[11] = -1.0f; m_vertices[12] = 0.0f;  // 左下 位置
+    m_vertices[13] =  0.0f; m_vertices[14] = 1.0f;                         // 左下 纹理
+    m_vertices[15] = -1.0f; m_vertices[16] =  1.0f; m_vertices[17] = 0.0f;  // 左上 位置
+    m_vertices[18] =  0.0f; m_vertices[19] = 0.0f;                         // 左上 纹理
 
-    // 设置位置顶点属性指针（存储在 VAO 中）
+    // 创建 VBO (Vertex Buffer Object) - 交错数组
+    glGenBuffers(1, &m_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(m_vertices), m_vertices, GL_DYNAMIC_DRAW);
+
+    // 创建 EBO (Element Buffer Object) - 索引数据
+    glGenBuffers(1, &m_ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(m_indices), m_indices, GL_STATIC_DRAW);
+
+    // 设置顶点属性指针（参考v1.0.8 FFmpegView.cc:667-670）
+    // location 0: 位置属性 (vec3, 步长5个float, 偏移0)
     glEnableVertexAttribArray(positionYCbCrLoc);
-    glVertexAttribPointer(positionYCbCrLoc, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glVertexAttribPointer(positionYCbCrLoc, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), nullptr);
 
-    // 纹理坐标 VBO：存储纹理坐标数据（4个顶点，每个顶点2个float）
-    glGenBuffers(1, &m_vboTexCoord);
-    glBindBuffer(GL_ARRAY_BUFFER, m_vboTexCoord);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, texCoordYCbCr, GL_STATIC_DRAW);
-
-    // 设置纹理坐标顶点属性指针（存储在 VAO 中）
+    // location 1: 纹理坐标属性 (vec2, 步长5个float, 偏移3个float)
     glEnableVertexAttribArray(texCoordYCbCrLoc);
-    glVertexAttribPointer(texCoordYCbCrLoc, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glVertexAttribPointer(texCoordYCbCrLoc, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     m_vao.release();  // 解绑 VAO，保存所有顶点属性状态
     m_vboInitialized = true;
 
-    if (logger) logger->info("StereoOpenGLCommon: VBO created successfully (position: {}, texCoord: {})",
-        m_vboPosition, m_vboTexCoord);
+    if (logger) logger->info("StereoOpenGLCommon: VBO and EBO created successfully (vbo: {}, ebo: {})",
+        m_vbo, m_ebo);
 
     m_stereoShaderInitialized = true;
     if (logger) logger->info("StereoOpenGLCommon: Stereo shader initialized successfully");
@@ -251,10 +264,11 @@ void StereoOpenGLCommon::paintGL()
     static int paintGLCounter = 0;
     static int debugSaveCounter = 0;
     paintGLCounter++;
-    
+
 #if ENABLE_VIDEO_TRACE
-    bool shouldSaveBefore = (paintGLCounter % 10 == 0);  // 每10次保存一次渲染前的帧（更频繁）
-    bool shouldSaveAfter = (paintGLCounter % 100 == 0);  // 每100次保存一次渲染后的帧
+    // 更频繁地保存调试帧用于分析
+    bool shouldSaveBefore = (paintGLCounter % 5 == 0);  // 每5次保存一次
+    bool shouldSaveAfter = (paintGLCounter % 10 == 0);  // 每10次保存一次渲染后的帧
 #else
     bool shouldSaveBefore = false;
     bool shouldSaveAfter = false;
@@ -547,24 +561,20 @@ void StereoOpenGLCommon::paintGLStereo()
         return;
     }
 
-    // vertex.glsl 使用 vec2 aPos，直接使用 2D 坐标
+    // vertex.glsl 使用 vec3 aPos（与v1.0.8一致）
     // 诊断：检查 attribute location 是否有效
     if (logger && paintGLStereoCounter % 100 == 0) {
         logger->info("StereoOpenGLCommon::paintGLStereo: Attribute locations - positionYCbCrLoc: {}, texCoordYCbCrLoc: {}",
             positionYCbCrLoc, texCoordYCbCrLoc);
     }
 
-    // 更新位置 VBO 数据（如果顶点索引改变）
-    // 注意：顶点属性指针已经存储在 VAO 中，只需要更新 VBO 数据
-    static int lastVerticesIdx = -1;
-    if (lastVerticesIdx != verticesIdx) {
-        glBindBuffer(GL_ARRAY_BUFFER, m_vboPosition);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 8, verticesYCbCr[verticesIdx]);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-        lastVerticesIdx = verticesIdx;
-        if (logger && paintGLStereoCounter % 100 == 0) {
-            logger->debug("StereoOpenGLCommon::paintGLStereo: Updated position VBO with verticesIdx: {}", verticesIdx);
-        }
+    // === 动态顶点计算（参考v1.0.8 FFmpegView::programDraw）===
+    // 在绘制前根据视频宽高比动态调整顶点坐标
+    if (m_textureSize.isValid()) {
+        updateDynamicVertices(m_textureSize.width(), m_textureSize.height());
+    } else if (videoFrame.width(0) > 0 && videoFrame.height(0) > 0) {
+        // 如果m_textureSize无效，使用videoFrame尺寸
+        updateDynamicVertices(videoFrame.width(0), videoFrame.height(0));
     }
 
     if (!shaderProgramStereo->bind())
@@ -642,27 +652,28 @@ void StereoOpenGLCommon::paintGLStereo()
     
     // fragment.glsl 不使用 uMatrix，vertex.glsl 也不使用，所以不需要设置
     // 如果需要矩阵变换，可以在 vertex shader 中添加
-    
+
     // 确保 viewport 设置正确（应该在 initializeGL 或 resizeGL 中设置，但这里也检查一下）
     GLint viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
     if (viewport[2] <= 0 || viewport[3] <= 0) {
         if (logger && paintGLStereoCounter % 100 == 0) {
-            logger->warn("StereoOpenGLCommon::paintGLStereo: Invalid viewport: {}x{}, widget size: {}x{}", 
-                viewport[2], viewport[3], 
+            logger->warn("StereoOpenGLCommon::paintGLStereo: Invalid viewport: {}x{}, widget size: {}x{}",
+                viewport[2], viewport[3],
                 m_widget ? m_widget->width() : -1, m_widget ? m_widget->height() : -1);
         }
         // 如果 viewport 无效，尝试从 widget 尺寸设置
         if (m_widget && m_widget->width() > 0 && m_widget->height() > 0) {
             glViewport(0, 0, m_widget->width(), m_widget->height());
             if (logger && paintGLStereoCounter % 100 == 0) {
-                logger->info("StereoOpenGLCommon::paintGLStereo: Set viewport to widget size: {}x{}", 
+                logger->info("StereoOpenGLCommon::paintGLStereo: Set viewport to widget size: {}x{}",
                     m_widget->width(), m_widget->height());
             }
         }
     }
-    
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    // 使用 glDrawElements + EBO 绘制（与v1.0.8一致）
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     // 检查 OpenGL 错误 - 详细版本
     GLenum glError = glGetError();
@@ -675,12 +686,12 @@ void StereoOpenGLCommon::paintGLStereo()
             case GL_OUT_OF_MEMORY: errorStr = "GL_OUT_OF_MEMORY"; break;
             default: errorStr = QString("Unknown: 0x%1").arg(glError, 4, 16, QChar('0')); break;
         }
-        logger->error("StereoOpenGLCommon::paintGLStereo: OpenGL error after glDrawArrays: {} (0x{:X})",
+        logger->error("StereoOpenGLCommon::paintGLStereo: OpenGL error after glDrawElements: {} (0x{:X})",
             errorStr.toStdString(), glError);
     }
 
     if (logger && paintGLStereoCounter % 100 == 0) {
-        logger->info("StereoOpenGLCommon::paintGLStereo: glDrawArrays completed, numPlanes: {}, viewport: {}x{}, textures: {}/{}/{}",
+        logger->info("StereoOpenGLCommon::paintGLStereo: glDrawElements completed, numPlanes: {}, viewport: {}x{}, textures: {}/{}/{}",
             numPlanes, viewport[2], viewport[3], textures[1], textures[2], textures[3]);
     }
 
@@ -784,4 +795,139 @@ void StereoOpenGLCommon::setStereoEnableRegion(bool enable, float topLeftX, floa
     m_stereoRegion[2] = bottomRightX;
     m_stereoRegion[3] = bottomRightY;
     doReset = true;
+}
+
+void StereoOpenGLCommon::updateDynamicVertices(int frameWidth, int frameHeight)
+{
+    // 参考 v1.0.8 FFmpegView::programDraw 的顶点计算逻辑
+    // 使用交错数组格式：每个顶点5个float {x, y, z, tex_x, tex_y}
+    // 顶点顺序：右上(0), 右下(1), 左下(2), 左上(3)
+
+    // 获取当前视口尺寸
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    int viewWidth = viewport[2];
+    int viewHeight = viewport[3];
+
+    if (viewWidth <= 0 || viewHeight <= 0) {
+        // 视口无效，使用widget尺寸
+        if (m_widget) {
+            viewWidth = m_widget->width();
+            viewHeight = m_widget->height();
+        }
+    }
+
+    // 检查是否需要更新顶点
+    bool texSizeChanged = (m_texWidth != frameWidth || m_texHeight != frameHeight);
+    bool viewSizeChanged = (m_viewWidth != viewWidth || m_viewHeight != viewHeight);
+
+    if (!texSizeChanged && !viewSizeChanged) {
+        // 尺寸没有变化，检查是否需要更新视差裁剪
+        if (m_parallaxShift == 0 || !m_enableStripParallaxSideView) {
+            return;  // 不需要更新
+        }
+    }
+
+    // 更新存储的尺寸
+    m_texWidth = frameWidth;
+    m_texHeight = frameHeight;
+    m_viewWidth = viewWidth;
+    m_viewHeight = viewHeight;
+
+    // 计算宽高比（参考v1.0.8 FFmpegView.cc:1084-1086）
+    // tr: 纹理宽高比, vr: 视口宽高比
+    float tr = (float)frameWidth / frameHeight;
+    float vr = (float)viewWidth / viewHeight;
+    float r = tr / vr;
+
+    if (logger) {
+        static int updateCounter = 0;
+        updateCounter++;
+        if (updateCounter % 100 == 0) {
+            logger->debug("StereoOpenGLCommon::updateDynamicVertices: frame={}x{}, view={}x{}, tr={}, vr={}, r={}",
+                frameWidth, frameHeight, viewWidth, viewHeight, tr, vr, r);
+        }
+    }
+
+    // 交错数组格式：每个顶点5个float {x, y, z, tex_x, tex_y}
+    // 纹理坐标固定：右上(1,0), 右下(1,1), 左下(0,1), 左上(0,0)
+    // 顶点顺序：右上(0), 右下(1), 左下(2), 左上(3)
+
+    if (m_fullscreenPlusStretch) {
+        // 全屏Plus模式：拉伸显示（参考v1.0.8 FFmpegView.cc:1176-1178）
+        // clang-format off
+        float vertices[20] = {
+            1.0f,  1.0f, 0.0f,     1.0f, 0.0f,  // 右上: 位置(1,1,0), 纹理(1,0)
+            1.0f, -1.0f, 0.0f,     1.0f, 1.0f,  // 右下: 位置(1,-1,0), 纹理(1,1)
+           -1.0f, -1.0f, 0.0f,     0.0f, 1.0f,  // 左下: 位置(-1,-1,0), 纹理(0,1)
+           -1.0f,  1.0f, 0.0f,     0.0f, 0.0f,  // 左上: 位置(-1,1,0), 纹理(0,0)
+        };
+        // clang-format on
+        memcpy(m_vertices, vertices, sizeof(vertices));
+    }
+    else if (tr > vr) {
+        // 纹理比视口"更宽"，上下留黑（参考v1.0.8 FFmpegView.cc:1097-1106）
+        float p = vr / tr;
+
+        // 视差调节时的裁剪效果
+        float sideViewStrip = 0.0f;
+        if (m_parallaxShift != 0 && m_enableStripParallaxSideView) {
+            float shiftOffset = 2.0f * std::abs(m_parallaxShift) + 2.0f;
+            sideViewStrip = shiftOffset / frameWidth;
+        }
+
+        // clang-format off
+        float vertices[20] = {
+            1.0f + sideViewStrip,  p, 0.0f,     1.0f, 0.0f,  // 右上
+            1.0f + sideViewStrip, -p, 0.0f,     1.0f, 1.0f,  // 右下
+           -1.0f - sideViewStrip, -p, 0.0f,     0.0f, 1.0f,  // 左下
+           -1.0f - sideViewStrip,  p, 0.0f,     0.0f, 0.0f,  // 左上
+        };
+        // clang-format on
+        memcpy(m_vertices, vertices, sizeof(vertices));
+    }
+    else if (tr < vr) {
+        // 纹理比视口"更高"，左右留黑（参考v1.0.8 FFmpegView.cc:1121-1128）
+        float sideViewStrip = 0.0f;
+        if (m_parallaxShift != 0 && m_enableStripParallaxSideView) {
+            float shiftOffset = 2.0f * std::abs(m_parallaxShift) + 2.0f;
+            sideViewStrip = shiftOffset / frameWidth;
+        }
+
+        // clang-format off
+        float vertices[20] = {
+             r + sideViewStrip,  1.0f, 0.0f,     1.0f, 0.0f,  // 右上
+             r + sideViewStrip, -1.0f, 0.0f,     1.0f, 1.0f,  // 右下
+            -r - sideViewStrip, -1.0f, 0.0f,     0.0f, 1.0f,  // 左下
+            -r - sideViewStrip,  1.0f, 0.0f,     0.0f, 0.0f,  // 左上
+        };
+        // clang-format on
+        memcpy(m_vertices, vertices, sizeof(vertices));
+    }
+    else {
+        // 宽高比相同，全屏显示（参考v1.0.8 FFmpegView.cc:1144-1150）
+        float sideViewStrip = 0.0f;
+        if (m_parallaxShift != 0 && m_enableStripParallaxSideView) {
+            float shiftOffset = 2.0f * std::abs(m_parallaxShift) + 2.0f;
+            sideViewStrip = shiftOffset / frameWidth;
+        }
+
+        // clang-format off
+        float vertices[20] = {
+            1.0f + sideViewStrip,  1.0f, 0.0f,     1.0f, 0.0f,  // 右上
+            1.0f + sideViewStrip, -1.0f, 0.0f,     1.0f, 1.0f,  // 右下
+           -1.0f - sideViewStrip, -1.0f, 0.0f,     0.0f, 1.0f,  // 左下
+           -1.0f - sideViewStrip,  1.0f, 0.0f,     0.0f, 0.0f,  // 左上
+        };
+        // clang-format on
+        memcpy(m_vertices, vertices, sizeof(vertices));
+    }
+
+    // 更新 VBO（参考v1.0.8 FFmpegView.cc:1169-1170）
+    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(m_vertices), m_vertices);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    // 更新宽高比
+    m_ratio = r;
 }
