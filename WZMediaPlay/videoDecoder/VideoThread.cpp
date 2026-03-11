@@ -234,6 +234,7 @@ bool VideoThread::handleSeekingState(bool &wasSeekingBefore)
     if (wasSeekingBefore && !isSeeking) {
         wasSeekingBefore = false;
         wasSeekingRecently_ = true;
+        isFirstFrameAfterSeek_ = true;  // 标记 seeking 后的第一帧，强制渲染
         videoBasePtsSet = false;  // 重置视频基准 PTS，让 Seek 后第一帧重新建立基准
         seekingStartTime_ = std::chrono::steady_clock::now(); // 记录seeking开始时间，用于超时保护
         eofAfterSeekCount_ = 0;
@@ -753,8 +754,19 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
     const nanoseconds MAX_FRAME_LAG = nanoseconds{1LL * 1000000000}; // 1秒
     bool frameExpired = (diff < -MAX_FRAME_LAG);                     // 视频滞后超过1秒
 
-    // 如果视频滞后太多，强制渲染，避免一直卡顿
-    if (frameExpired) {
+    // 关键修复：seeking 后的第一帧强制渲染，不应用同步跳帧逻辑
+    // 这解决了 seek 到非关键帧位置时，关键帧 PTS 超前于 seek 目标位置导致帧被跳过的问题
+    if (isFirstFrameAfterSeek_) {
+        isFirstFrameAfterSeek_ = false;  // 只对第一帧生效
+        SPDLOG_LOGGER_INFO(
+            logger,
+            "VideoThread::renderFrame: First frame after seek, forcing render (framePts={}ms, masterClock={}ms, diff={}ms)",
+            std::chrono::duration_cast<milliseconds>(framePts).count(),
+            std::chrono::duration_cast<milliseconds>(masterClock).count(),
+            std::chrono::duration_cast<milliseconds>(diff).count());
+        // 强制渲染，不跳过
+    } else if (frameExpired) {
+        // 如果视频滞后太多，强制渲染，避免一直卡顿
         if (logger && (frameCount_ % 10 == 0)) { // 每10帧输出一次，避免日志过多（BUG-026：降为 debug 减噪）
             SPDLOG_LOGGER_DEBUG(
                 logger,
@@ -885,6 +897,7 @@ void VideoThread::run()
     // 重置 seeking 相关状态（每次线程启动时重置，避免视频切换时状态混乱）
     wasSeekingRecently_ = false;
     eofAfterSeekCount_ = 0;
+    isFirstFrameAfterSeek_ = false;  // 重置 seeking 后第一帧标志
 
     // 重置跳帧优化相关状态
     lastRenderedFrame_.clear();
