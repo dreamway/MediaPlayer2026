@@ -451,12 +451,18 @@ void StereoOpenGLCommon::paintGLStereo()
         {
             // 简化设计：不再使用硬件互操作，直接使用软件帧路径
             const qint32 halfLinesize = (videoFrame.linesize(0) >> videoFrame.chromaShiftW());
-            correctLinesize =
-            (
-                (halfLinesize == videoFrame.linesize(1) && videoFrame.linesize(1) == videoFrame.linesize(2)) &&
-                (videoFrame.linesize(1) == halfLinesize)
-            );
-            for (qint32 p = 0; p < 3; ++p)
+            // NV12 格式只有 2 个平面，linesize(2) 不存在，需要根据 numPlanes 判断
+            if (numPlanes >= 3) {
+                correctLinesize =
+                (
+                    (halfLinesize == videoFrame.linesize(1) && videoFrame.linesize(1) == videoFrame.linesize(2)) &&
+                    (videoFrame.linesize(1) == halfLinesize)
+                );
+            } else {
+                // NV12 格式：只有 2 个平面
+                correctLinesize = (halfLinesize == videoFrame.linesize(1));
+            }
+            for (qint32 p = 0; p < numPlanes && p < 3; ++p)
             {
                 const GLsizei w = correctLinesize ? videoFrame.linesize(p) / bytesMultiplier : widths[p];
                 const GLsizei h = heights[p];
@@ -477,7 +483,7 @@ void StereoOpenGLCommon::paintGLStereo()
 
         // 上传纹理数据（简化设计：不再使用硬件互操作）
         {
-            for (qint32 p = 0; p < 3; ++p)
+            for (qint32 p = 0; p < numPlanes && p < 3; ++p)
             {
                 const quint8 *data = videoFrame.constData(p);
                 const GLsizei w = correctLinesize ? videoFrame.linesize(p) / bytesMultiplier : widths[p];

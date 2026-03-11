@@ -436,6 +436,11 @@ void OpenGLCommon::paintGL()
 
             // 简化设计：不再使用硬件互操作，直接使用软件帧渲染路径
             {
+                // 更新 numPlanes（根据帧格式动态确定）
+                // NV12 格式只有 2 个平面，YUV420P 有 3 个平面
+                numPlanes = videoFrame.numPlanes();
+                if (numPlanes < 2) numPlanes = 3;  // 默认 YUV420P
+
                 /* Load textures */
                 // 在加载纹理前，验证帧数据完整性（避免在转换过程中数据被修改导致花屏）
                 bool frameDataValid = true;

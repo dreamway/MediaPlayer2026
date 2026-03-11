@@ -56,6 +56,18 @@ public:
     bool init(AVCodecContext *codec_ctx, AVRational stream_time_base);
 
     /**
+     * 设置预先初始化的硬件解码器
+     * 用于在 avcodec_open2 之前初始化硬件解码器的情况
+     * @param hw_decoder 预先初始化的硬件解码器（会转移所有权）
+     */
+    void setHardwareDecoder(std::unique_ptr<HardwareDecoder> hw_decoder) {
+        hw_decoder_ = std::move(hw_decoder);
+        if (hw_decoder_ && hw_decoder_->isInitialized()) {
+            use_hw_decoder_ = true;
+        }
+    }
+
+    /**
      * 清理解码器
      */
     void clear();

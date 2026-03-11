@@ -14,6 +14,7 @@
 #include "videoDecoder/VideoWidgetBase.h"
 #include "videoDecoder/chronons.h"
 #include "videoDecoder/ffmpeg.h"
+#include "videoDecoder/hardware_decoder.h"
 #include "videoDecoder/opengl/OpenGLRenderer.h"
 #include "videoDecoder/opengl/StereoOpenGLRenderer.h"
 #include <atomic>
@@ -443,7 +444,15 @@ bool PlayController::initializeCodecs()
         // FFDecHW::init() 内部会尝试硬件解码，失败则自动回退到软件解码
         if (enableHardwareDecoding_) {
             // 创建硬件解码器（内部会尝试硬件解码，失败则回退到软件解码）
-            videoDecoder_ = std::make_unique<FFDecHW>();
+            auto hwDecoder = std::make_unique<FFDecHW>();
+
+            // 如果已经有预先初始化的硬件解码器（在 streamComponentOpen 中创建），使用它
+            if (hwDecoder_) {
+                SPDLOG_LOGGER_INFO(logger, "Using pre-initialized hardware decoder from streamComponentOpen");
+                hwDecoder->setHardwareDecoder(std::move(hwDecoder_));
+            }
+
+            videoDecoder_ = std::move(hwDecoder);
             SPDLOG_LOGGER_INFO(logger, "Created FFDecHW decoder (will try hardware decoding)");
         } else {
             // 创建软件解码器
@@ -600,9 +609,32 @@ int PlayController::streamComponentOpen(unsigned int stream_index)
 
     const AVCodec *codec = nullptr;
 
-    // 注意：硬件解码器的初始化现在由 FFDecHW::init() 负责
-    // 这里只负责打开软件解码器，硬件解码的尝试会在 FFDecHW::init() 中进行
-    // 如果硬件解码失败或未启用，使用软件解码
+    // [硬件解码支持] 如果启用了硬件解码且是视频流，尝试使用硬件解码
+    // 关键：必须在 avcodec_open2 之前设置 hw_device_ctx 和 get_format 回调
+    bool use_hw_decoder = false;
+    std::unique_ptr<HardwareDecoder> hw_decoder_for_init;
+
+    if (enableHardwareDecoding_ && avCodecContext->codec_type == AVMEDIA_TYPE_VIDEO) {
+        SPDLOG_LOGGER_INFO(logger, "PlayController::streamComponentOpen: Hardware decoding enabled, attempting to set up hardware context");
+
+        // 创建临时硬件解码器用于初始化
+        hw_decoder_for_init = std::make_unique<HardwareDecoder>();
+
+        // 尝试初始化硬件解码器（这会创建 hw_device_ctx 并设置 get_format 回调）
+        codec = hw_decoder_for_init->tryInitHardwareDecoder(avCodecContext->codec_id, avCodecContext);
+
+        if (codec && hw_decoder_for_init->isInitialized()) {
+            use_hw_decoder = true;
+            SPDLOG_LOGGER_INFO(logger, "PlayController::streamComponentOpen: Hardware decoder set up successfully: {}", codec->name);
+            // 硬件解码器线程数设为0（硬件解码不支持多线程）
+            avCodecContext->thread_count = 0;
+        } else {
+            SPDLOG_LOGGER_WARN(logger, "PlayController::streamComponentOpen: Hardware decoder setup failed, will use software decoder");
+            hw_decoder_for_init.reset();
+        }
+    }
+
+    // 如果没有使用硬件解码器，使用软件解码器
     if (!codec) {
         codec = avcodec_find_decoder(avCodecContext->codec_id);
         if (!codec) {
@@ -640,7 +672,10 @@ int PlayController::streamComponentOpen(unsigned int stream_index)
     case AVMEDIA_TYPE_VIDEO:
         videoStream_ = fmtctx->streams[stream_index];
         videoCodecCtx_ = std::move(AVCodecContextPtr(avCodecContext));
-        SPDLOG_LOGGER_INFO(logger, "PlayController::streamComponentOpen: Video codec context assigned, codec_id: {}", int(avCodecContext->codec_id));
+        // 存储硬件解码器实例，供 FFDecHW 使用
+        hwDecoder_ = std::move(hw_decoder_for_init);
+        SPDLOG_LOGGER_INFO(logger, "PlayController::streamComponentOpen: Video codec context assigned, codec_id: {}, hwDecoder_: {}",
+                          int(avCodecContext->codec_id), hwDecoder_ ? "valid" : "null");
         break;
     default:
         SPDLOG_LOGGER_WARN(logger, "PlayController::streamComponentOpen: Unsupported codec type: {}", int(avCodecContext->codec_type));

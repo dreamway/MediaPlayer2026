@@ -417,10 +417,13 @@ int Frame::chromaShiftH() const
 
 int Frame::numPlanes() const
 {
-    if (!m_pixelFmtDescriptor) {
+    if (!m_frame) {
         return 0;
     }
-    return m_pixelFmtDescriptor->nb_components;
+    // 使用 av_pix_fmt_count_planes 获取正确的平面数
+    // 注意：nb_components 对于 NV12 返回 3（Y,U,V 分量），但实际只有 2 个平面
+    // NV12 格式：平面0 = Y，平面1 = UV 交错
+    return av_pix_fmt_count_planes(static_cast<AVPixelFormat>(m_frame->format));
 }
 
 int Frame::depth() const

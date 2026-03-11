@@ -18,6 +18,7 @@ class Decoder;
 class VideoRenderer;
 class VideoWidgetBase;
 class SystemMonitor;
+class HardwareDecoder;
 class QWidget;
 namespace videoDecoder { class Statistics; }
 
@@ -213,6 +214,9 @@ private:
 
     // 解码器和渲染器（参考 QMPlayer2 的架构）
     std::unique_ptr<Decoder> videoDecoder_;    // 视频解码器（FFDecSW 或 FFDecHW）
+
+    // 硬件解码器（在 avcodec_open2 之前初始化，然后传递给 FFDecHW）
+    std::unique_ptr<HardwareDecoder> hwDecoder_;
 
     // 渲染架构（VideoRenderer + VideoWidgetBase）
     std::shared_ptr<VideoRenderer> videoRenderer_; // 渲染器接口

@@ -55,6 +55,31 @@ std::string HardwareDecoder::tryCreateDeviceContext(AVCodecID codec_id)
     for (int i = 0; i < NUM_SUPPORTED_DECODERS; ++i) {
         const char *device_type = SUPPORTED_HW_DECODERS[i];
 
+#ifdef __APPLE__
+        // VideoToolbox 特殊处理：VideoToolbox 使用标准软件解码器 + hwaccel
+        // 不需要查找单独的 h264_videotoolbox 解码器
+        if (strcmp(device_type, "videotoolbox") == 0) {
+            logger->info("VideoToolbox detected - will use standard decoder with hwaccel");
+
+            // 直接创建 VideoToolbox 设备上下文
+            int ret = av_hwdevice_ctx_create(&hw_device_ctx_, av_hwdevice_find_type_by_name(device_type), nullptr, nullptr, 0);
+
+            if (ret == 0 && hw_device_ctx_) {
+                logger->info("VideoToolbox device context created successfully");
+                return std::string(device_type);
+            } else {
+                if (ret < 0) {
+                    char errbuf[256] = {0};
+                    av_strerror(ret, errbuf, sizeof(errbuf));
+                    logger->warn("Failed to create VideoToolbox device context: ret={}, error: {}", ret, errbuf);
+                } else {
+                    logger->warn("Failed to create VideoToolbox device context: ret={}", ret);
+                }
+                continue;
+            }
+        }
+#endif
+
         // 先检查是否有对应的硬件解码器（不创建设备上下文）
         // 这样可以提前知道是否支持，避免不必要的设备创建
         // 注意：对于 CUDA 设备，解码器名称是 *_cuvid，而不是 *_cuda
@@ -109,6 +134,21 @@ const AVCodec *HardwareDecoder::findHardwareDecoder(AVCodecID codec_id, const st
         logger->warn("Unknown codec ID: {}", static_cast<int>(codec_id));
         return nullptr;
     }
+
+#ifdef __APPLE__
+    // VideoToolbox 特殊处理：使用标准软件解码器 + hwaccel
+    // VideoToolbox 不需要单独的硬件解码器，直接返回标准解码器
+    if (device_type == "videotoolbox") {
+        const AVCodec *std_codec = avcodec_find_decoder(codec_id);
+        if (std_codec) {
+            logger->info("VideoToolbox: Using standard decoder '{}' with hwaccel", std_codec->name);
+            return std_codec;
+        } else {
+            logger->warn("VideoToolbox: Standard decoder not found for codec: {}", codec_name);
+            return nullptr;
+        }
+    }
+#endif
 
     // 尝试多种可能的硬件解码器名称
     std::vector<std::string> possible_names;
@@ -276,6 +316,10 @@ AVPixelFormat HardwareDecoder::get_hw_format(AVCodecContext *ctx, const enum AVP
         return AV_PIX_FMT_NONE;
     }
 
+    logger->info("get_hw_format: Called, hw_pix_fmt_={}, device_type={}",
+                static_cast<int>(hw_decoder->hw_pix_fmt_),
+                hw_decoder->device_type_name_);
+
     // [参考QtAV] 设置允许软件回退标志
 #ifdef AV_HWACCEL_FLAG_ALLOW_SOFTWARE
     ctx->hwaccel_flags |= AV_HWACCEL_FLAG_ALLOW_SOFTWARE;
@@ -283,14 +327,17 @@ AVPixelFormat HardwareDecoder::get_hw_format(AVCodecContext *ctx, const enum AVP
 
     // [参考QtAV] 检查是否有硬件加速格式可用
     bool can_hwaccel = false;
+    logger->info("get_hw_format: Enumerating available pixel formats:");
     for (size_t i = 0; pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
         const AVPixFmtDescriptor *dsc = av_pix_fmt_desc_get(pix_fmts[i]);
-        if (dsc == nullptr)
+        if (dsc == nullptr) {
+            logger->info("  [{}]: format={} (unknown descriptor)", i, static_cast<int>(pix_fmts[i]));
             continue;
+        }
         bool hwaccel = (dsc->flags & AV_PIX_FMT_FLAG_HWACCEL) != 0;
-        
-        logger->debug("get_hw_format: available {}ware decoder output format {} ({})",
-                     hwaccel ? "hard" : "soft", static_cast<int>(pix_fmts[i]), dsc->name);
+
+        logger->info("  [{}]: format={} ({}), hwaccel={}",
+                     i, static_cast<int>(pix_fmts[i]), dsc->name, hwaccel);
         if (hwaccel)
             can_hwaccel = true;
     }
@@ -310,7 +357,7 @@ AVPixelFormat HardwareDecoder::get_hw_format(AVCodecContext *ctx, const enum AVP
             hw_decoder->hw_height_ == hw_decoder->codedHeight(ctx) &&
             hw_decoder->hw_profile_ == ctx->profile &&
             ctx->hwaccel_context) {
-            logger->debug("get_hw_format: Reusing existing hardware context, format: {}", static_cast<int>(pix_fmts[i]));
+            logger->info("get_hw_format: Reusing existing hardware context, format: {}", static_cast<int>(pix_fmts[i]));
             return pix_fmts[i];
         }
 

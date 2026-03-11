@@ -37,23 +37,14 @@ VideoRendererPtr RendererFactory::createRenderer(StereoFormat format)
 {
     VideoRendererPtr renderer;
 
-    switch (format) {
-        case STEREO_FORMAT_NORMAL_2D:
-            renderer = createOpenGLRenderer();
-            break;
-
-        case STEREO_FORMAT_3D:
-            renderer = createStereoRenderer();
-            break;
-
-        default:
-            // 默认使用 2D 渲染器
-            renderer = createOpenGLRenderer();
-            break;
-    }
+    // 始终使用 StereoOpenGLRenderer，因为它同时支持 2D 和 3D 模式
+    // 这样视差调节功能在任何模式下都能工作
+    // - 2D 模式：调用 OpenGLRenderer::render() 处理
+    // - 3D 模式：使用 StereoOpenGLCommon 进行立体渲染
+    renderer = createStereoRenderer();
 
     if (renderer && logger) {
-        logger->info("RendererFactory::createRenderer: Created renderer for format {}",
+        logger->info("RendererFactory::createRenderer: Created StereoOpenGLRenderer for format {} (supports both 2D and 3D)",
                      static_cast<int>(format));
     }
 
