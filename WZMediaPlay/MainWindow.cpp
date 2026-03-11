@@ -346,11 +346,9 @@ MainWindow::~MainWindow()
     }
     if (logger) {
         logger->flush();
-        // 注意：只有当 LOG_MODE 为 0 或 1 时，logger 才是我们 new 出来的
-        // LOG_MODE 为 2 时，logger 是 file_sink.get()，不应该 delete
-        if (GlobalDef::getInstance()->LOG_MODE == 0 || GlobalDef::getInstance()->LOG_MODE == 1) {
-            delete logger;
-        }
+        // [修复] logger 是由 shared_ptr 管理的（通过 spdlog::register_logger 注册）
+        // 不应该手动 delete，由 spdlog::drop_all() 统一管理生命周期
+        // 手动 delete 会导致 "pointer being freed was not allocated" 错误
         logger = nullptr;
     }
     spdlog::drop_all();

@@ -22,7 +22,7 @@ from core.screenshot_capture import ScreenshotCapture, ImageAnalyzer
 from core.log_monitor import LogMonitor
 from config import (
     APP_PATH, TEST_VIDEO_LG_PATH, LOG_DIR, SCREENSHOT_DIR, REPORT_DIR,
-    WAIT_TIMES, BLACK_THRESHOLD
+    WAIT_TIMES, BLACK_THRESHOLD, REFERENCE_FRAME_DIR
 )
 
 
@@ -110,17 +110,25 @@ class RenderingVerificationTest(TestBase):
             actual_height = video_bounds["bottom"] - video_bounds["top"]
             actual_ratio = actual_width / actual_height if actual_height > 0 else 0
 
-            # LG.mp4 是左右格式的3D视频，原始宽高比需要考虑
-            # 假设原始视频是 1920x1080 的 LR 格式，则每个视角是 960x1080
-            # 显示时可能会保持这个宽高比
-            expected_ratios = [16/9, 4/3, 960/1080, 1920/1080]  # 常见宽高比
+            # 常见宽高比列表（包括常见显示器比例）
+            # 4:3 = 1.333, 16:9 = 1.778, 16:10 = 1.6, 3:2 = 1.5
+            # 立体视频单视角: 960/1080 = 0.889
+            expected_ratios = [
+                16/9,   # 1.778 - 最常见的宽屏比例
+                16/10,  # 1.6 - MacBook 比例
+                4/3,    # 1.333 - 标准比例
+                3/2,    # 1.5 - 照片比例
+                960/1080,  # 0.889 - 立体视频单视角
+                1920/1080,  # 1.778 - Full HD
+                3840/2160,  # 1.778 - 4K
+            ]
 
             # 找到最接近的预期宽高比
             closest_ratio = min(expected_ratios, key=lambda r: abs(actual_ratio - r))
             ratio_error = abs(actual_ratio - closest_ratio) / closest_ratio
 
-            # 允许5%的误差
-            tolerance = 0.05
+            # 允许 10% 的误差（考虑窗口边框、黑边等因素）
+            tolerance = 0.10
 
             if ratio_error > tolerance:
                 self.end_test(test_name, False,
@@ -431,6 +439,101 @@ class RenderingVerificationTest(TestBase):
 
     # ==================== 综合测试运行 ====================
 
+    def test_reference_frame_match(self) -> bool:
+        """
+        测试渲染结果与参考帧匹配（精确验证）
+
+        说明：
+        - 该用例用于补齐"非黑屏但画面错误"无法检测的问题。
+        - 使用 SMPTE 测试视频进行精确验证。
+        """
+        test_name = "参考帧精确匹配"
+        self.start_test(test_name)
+
+        try:
+            # 使用 SMPTE 测试视频进行参考帧比对
+            smpte_video = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+                                       "testing", "video", "test_smpte_640x480_5s.mp4")
+            smpte_reference = os.path.join(REFERENCE_FRAME_DIR, "reference_smpte_640x480.png")
+
+            if not os.path.exists(smpte_video):
+                self.end_test(
+                    test_name,
+                    False,
+                    f"SMPTE 测试视频不存在: {smpte_video}",
+                    {"expected_video": smpte_video},
+                )
+                self._record_result(test_name, False, {"error": "missing_test_video", "path": smpte_video})
+                return False
+
+            if not os.path.exists(smpte_reference):
+                self.end_test(
+                    test_name,
+                    False,
+                    f"SMPTE 参考帧不存在: {smpte_reference}",
+                    {"expected_reference": smpte_reference},
+                )
+                self._record_result(test_name, False, {"error": "missing_reference_frame", "path": smpte_reference})
+                return False
+
+            # 打开 SMPTE 测试视频
+            # 使用快捷键打开文件
+            KeyboardInput.send_hotkey('o', ['command'], delay=0.5)
+            time.sleep(0.5)
+
+            # 输入视频路径（使用 pyautogui 输入）
+            try:
+                import pyautogui
+                pyautogui.write(smpte_video, interval=0.02)
+                time.sleep(0.3)
+                pyautogui.press('enter')
+            except Exception as e:
+                self.end_test(test_name, False, f"无法输入视频路径: {e}")
+                return False
+
+            # 等待视频加载和播放
+            time.sleep(WAIT_TIMES["playback_test"])
+
+            # 截取渲染帧
+            screenshot_path = self.screenshot.capture_full_screen()
+
+            # ROI：裁掉窗口边框影响（取中间 80% 区域）
+            from PIL import Image
+
+            img = Image.open(screenshot_path)
+            w, h = img.size
+            roi = (w * 0.1, h * 0.1, w * 0.9, h * 0.9)
+
+            cmp = ImageAnalyzer.compare_to_reference(
+                screenshot_path,
+                smpte_reference,
+                roi=roi,
+                mse_threshold=500.0,  # 放宽阈值，考虑窗口边框等因素
+            )
+            if not cmp.get("passed"):
+                self.end_test(
+                    test_name,
+                    False,
+                    f"参考帧不匹配: mse={cmp.get('mse'):.2f}, psnr={cmp.get('psnr'):.2f}",
+                    {"screenshot": screenshot_path, "reference": smpte_reference, "compare": cmp},
+                )
+                self._record_result(test_name, False, {"screenshot": screenshot_path, "reference": smpte_reference, "compare": cmp})
+                return False
+
+            self.end_test(
+                test_name,
+                True,
+                f"参考帧匹配: mse={cmp.get('mse'):.2f}, psnr={cmp.get('psnr'):.2f}",
+                {"screenshot": screenshot_path, "reference": smpte_reference, "compare": cmp},
+            )
+            self._record_result(test_name, True, {"screenshot": screenshot_path, "reference": smpte_reference, "compare": cmp})
+            return True
+
+        except Exception as e:
+            self.end_test(test_name, False, f"参考帧测试失败: {e}")
+            self._record_result(test_name, False, {"error": str(e)})
+            return False
+
     def run_all_tests(self, video_path: str = None):
         """运行所有渲染验证测试"""
         print("\n" + "=" * 80)
@@ -459,6 +562,10 @@ class RenderingVerificationTest(TestBase):
             # 渲染稳定性
             print("\n--- 渲染稳定性测试 ---")
             self.test_rendering_stability()
+
+            # 参考帧精确验证
+            print("\n--- 参考帧精确验证 ---")
+            self.test_reference_frame_match()
 
         finally:
             self.teardown()

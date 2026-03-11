@@ -44,6 +44,11 @@ class LogMonitor:
             'errors': [],
             'warnings': [],
         }
+        # 播放位置（用于与 UI 同步校验）
+        self._last_playback_position_sec = -1   # onUpdatePlayProcess 的 elapsedInSeconds
+        self._last_seek_position_ms = -1        # onSeekingFinished 的 positionMs
+        self._last_seek_position_sec = -1
+        self._playback_position_updates = 0     # 累计收到的进度更新次数
 
     def find_latest_log(self) -> Optional[str]:
         """查找最新的日志文件"""
@@ -116,6 +121,26 @@ class LogMonitor:
         if 'seek' in line_lower:
             self.events['seek_events'] += 1
 
+        # 播放进度：MainWindow::onUpdatePlayProcess 或 onUpdatePlayProcess: elapsedInSeconds=
+        m = re.search(r'elapsedInSeconds[=:]?\s*(\d+)', line, re.IGNORECASE)
+        if m:
+            try:
+                self._last_playback_position_sec = int(m.group(1))
+                self._playback_position_updates += 1
+            except ValueError:
+                pass
+
+        # Seek 完成位置：MainWindow::onSeekingFinished: received positionMs=5000ms
+        m = re.search(r'positionMs[=:]?\s*(\d+)\s*ms?', line, re.IGNORECASE)
+        if not m:
+            m = re.search(r'PlayController::seek:\s*(\d+)\s*ms', line)
+        if m:
+            try:
+                self._last_seek_position_ms = int(m.group(1))
+                self._last_seek_position_sec = self._last_seek_position_ms // 1000
+            except ValueError:
+                pass
+
         # 音视频同步
         if 'audio' in line_lower and 'sync' in line_lower:
             self.events['audio_sync'] += 1
@@ -187,6 +212,26 @@ class LogMonitor:
             'errors': [],
             'warnings': [],
         }
+        self._last_playback_position_sec = -1
+        self._last_seek_position_ms = -1
+        self._last_seek_position_sec = -1
+        self._playback_position_updates = 0
+
+    def get_last_playback_position_sec(self) -> int:
+        """最近一次从日志解析到的播放进度（秒）。无则返回 -1。"""
+        return self._last_playback_position_sec
+
+    def get_last_seek_position_ms(self) -> int:
+        """最近一次 seek 完成时的目标位置（毫秒）。无则返回 -1。"""
+        return self._last_seek_position_ms
+
+    def get_last_seek_position_sec(self) -> int:
+        """最近一次 seek 完成时的目标位置（秒）。无则返回 -1。"""
+        return self._last_seek_position_sec
+
+    def get_playback_position_update_count(self) -> int:
+        """累计收到的播放进度更新次数（onUpdatePlayProcess）。"""
+        return self._playback_position_updates
 
 
 class LogVerifier:

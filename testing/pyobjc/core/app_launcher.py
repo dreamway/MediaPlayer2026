@@ -45,7 +45,7 @@ class AppLauncher:
         self._pid = None
         self._running_app = None
 
-    def launch(self) -> bool:
+    def launch(self, app_args: list = None) -> bool:
         """
         Launch the application.
 
@@ -56,9 +56,32 @@ class AppLauncher:
             AppLauncherError: If launch fails.
         """
         try:
+            # 先检查是否已有实例在运行
+            app_name = self.app_path.split("/")[-1]
+            workspace = NSWorkspace.sharedWorkspace()
+            running_apps = workspace.runningApplications()
+
+            for app in running_apps:
+                if app.localizedName() == app_name or app.bundleIdentifier() == app_name:
+                    # 已有实例在运行，直接使用它
+                    self._running_app = app
+                    self._pid = app.processIdentifier()
+                    print(f"[AppLauncher] Found existing {app_name} instance (PID: {self._pid}), using it")
+                    # 激活应用到前台
+                    try:
+                        app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+                    except Exception:
+                        pass
+                    time.sleep(WAIT_TIMES["after_open"])
+                    return True
+
+            # 没有现有实例，启动新实例
+            cmd = [self.app_path]
+            if app_args:
+                cmd.extend(app_args)
             # Launch the application using subprocess
             self._process = subprocess.Popen(
-                [self.app_path],
+                cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True
@@ -70,6 +93,13 @@ class AppLauncher:
 
             while time.time() - start_time < timeout_sec:
                 if self.is_running():
+                    # 尽量激活应用到前台，避免 Accessibility 还未准备好/窗口不可见
+                    try:
+                        running = NSRunningApplication.runningApplicationWithProcessIdentifier_(self.get_pid())
+                        if running:
+                            running.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+                    except Exception:
+                        pass
                     # Wait a bit more for the window to be ready
                     time.sleep(WAIT_TIMES["after_open"])
                     return True

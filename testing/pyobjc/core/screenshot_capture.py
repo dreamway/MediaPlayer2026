@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from PIL import Image
+    from PIL import ImageChops
 except ImportError:
     print("Error: Pillow is not installed. Run: pip install Pillow")
     sys.exit(1)
@@ -340,6 +341,72 @@ class ImageAnalyzer:
 
         except Exception as e:
             raise Exception(f"Failed to compare images: {e}")
+
+    @staticmethod
+    def _crop_roi(img: Image.Image, roi: tuple | None) -> Image.Image:
+        """裁剪 ROI: (left, top, right, bottom)。roi 为 None 则返回原图。"""
+        if roi is None:
+            return img
+        left, top, right, bottom = roi
+        left = max(0, int(left))
+        top = max(0, int(top))
+        right = min(img.size[0], int(right))
+        bottom = min(img.size[1], int(bottom))
+        if right <= left or bottom <= top:
+            return img
+        return img.crop((left, top, right, bottom))
+
+    @staticmethod
+    def compare_to_reference(
+        actual_image_path: str,
+        reference_image_path: str,
+        *,
+        roi: tuple | None = None,
+        mse_threshold: float = 100.0,
+    ) -> dict:
+        """
+        与参考帧做精确比对（MSE/PSNR），用于发现“非黑屏但画面错误”的渲染问题。
+
+        Returns:
+            dict: {"passed": bool, "mse": float, "psnr": float, ...}
+        """
+        if not os.path.exists(actual_image_path):
+            return {"passed": False, "error": f"actual image not found: {actual_image_path}"}
+        if not os.path.exists(reference_image_path):
+            return {"passed": False, "error": f"reference image not found: {reference_image_path}"}
+
+        a = Image.open(actual_image_path).convert("RGB")
+        r = Image.open(reference_image_path).convert("RGB")
+
+        # 尺寸不同先缩放到一致（以 reference 为准）
+        if a.size != r.size:
+            a = a.resize(r.size)
+
+        a = ImageAnalyzer._crop_roi(a, roi)
+        r = ImageAnalyzer._crop_roi(r, roi)
+
+        diff = ImageChops.difference(a, r)
+        hist = diff.histogram()
+        sq = 0.0
+        for i, count in enumerate(hist):
+            v = i % 256
+            sq += (v * v) * count
+        n = diff.size[0] * diff.size[1] * 3
+        mse = sq / max(1, n)
+
+        if mse <= 1e-12:
+            psnr = 99.0
+        else:
+            import math
+            psnr = 20.0 * math.log10(255.0) - 10.0 * math.log10(mse)
+
+        return {
+            "passed": mse <= mse_threshold,
+            "mse": mse,
+            "psnr": psnr,
+            "roi": roi,
+            "mse_threshold": mse_threshold,
+        }
 
 
 def test_black_screen_detection():

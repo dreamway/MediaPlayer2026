@@ -48,6 +48,24 @@ class KeyboardInput:
     }
 
     @staticmethod
+    def focus_app(app_name: str = "WZMediaPlayer", delay: float = 0.2):
+        """
+        将目标应用置前，避免按键发送到错误窗口。
+        """
+        script = f'''
+        tell application "System Events"
+            try
+                set frontmost of process "{app_name}" to true
+            end try
+        end tell
+        '''
+        try:
+            subprocess.run(['osascript', '-e', script], check=True, timeout=5)
+            time.sleep(delay)
+        except Exception:
+            pass
+
+    @staticmethod
     def send_key(key: str, modifiers: list = None, delay: float = 0.1):
         """
         发送按键
@@ -74,6 +92,7 @@ class KeyboardInput:
         '''
 
         try:
+            KeyboardInput.focus_app()
             subprocess.run(['osascript', '-e', script], check=True, timeout=5)
             time.sleep(delay)
         except subprocess.TimeoutExpired:
@@ -117,13 +136,13 @@ class KeyboardInput:
 
     @staticmethod
     def seek_forward(seconds: int = 10):
-        """向前seek (上箭头)"""
-        KeyboardInput.send_key('up', delay=0.3)
+        """向前 seek（右箭头，与 MainWindow shortcut_SeekRight 一致）"""
+        KeyboardInput.send_key('right', delay=0.3)
 
     @staticmethod
     def seek_backward(seconds: int = 10):
-        """向后seek (下箭头)"""
-        KeyboardInput.send_key('down', delay=0.3)
+        """向后 seek（左箭头，与 MainWindow shortcut_SeekLeft 一致）"""
+        KeyboardInput.send_key('left', delay=0.3)
 
     @staticmethod
     def seek_to_start():
@@ -169,6 +188,58 @@ class KeyboardInput:
     def take_screenshot():
         """截屏 (Cmd+S)"""
         KeyboardInput.send_hotkey('s', ['command'], delay=0.3)
+
+    @staticmethod
+    def open_video_file(video_path: str, delay: float = 2.0):
+        """
+        通过文件对话框打开视频文件。
+
+        Args:
+            video_path: 视频文件的绝对路径
+            delay: 打开后等待时间
+        """
+        import os
+
+        # 确保路径是绝对路径
+        video_path = os.path.abspath(video_path)
+        directory = os.path.dirname(video_path)
+        filename = os.path.basename(video_path)
+
+        # 使用 AppleScript 打开文件对话框并选择文件
+        script = f'''
+        tell application "System Events"
+            -- 激活 WZMediaPlayer
+            set frontmost of process "WZMediaPlayer" to true
+            delay 0.3
+
+            -- 打开文件对话框 (Cmd+O)
+            keystroke "o" using command down
+            delay 1.0
+
+            -- 输入路径 (Cmd+Shift+G 进入"前往文件夹")
+            keystroke "g" using {{command down, shift down}}
+            delay 0.5
+
+            -- 输入完整路径
+            keystroke "{video_path}"
+            delay 0.3
+
+            -- 按 Enter 确认路径
+            keystroke return
+            delay 0.5
+
+            -- 再按 Enter 打开文件
+            keystroke return
+        end tell
+        '''
+
+        try:
+            subprocess.run(['osascript', '-e', script], check=True, timeout=15)
+            time.sleep(delay)
+        except subprocess.TimeoutExpired:
+            print(f"Warning: Open video file timed out: {video_path}")
+        except subprocess.CalledProcessError as e:
+            print(f"Warning: Open video file failed: {video_path}, error: {e}")
 
 
 def main():

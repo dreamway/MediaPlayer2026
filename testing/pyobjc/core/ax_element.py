@@ -15,8 +15,9 @@ from ApplicationServices import (
     kAXPressAction,
     kAXIncrementAction,
     kAXDecrementAction,
+    kAXMinValueAttribute,
+    kAXMaxValueAttribute,
 )
-from CoreFoundation import CFRelease
 
 
 class AXElementError(Exception):
@@ -38,11 +39,6 @@ class AXElement:
             ax_element: The underlying AXUIElementRef
         """
         self._element = ax_element
-
-    def __del__(self):
-        """Clean up the AXUIElement reference."""
-        if self._element is not None:
-            CFRelease(self._element)
 
     def get_title(self) -> str:
         """
@@ -85,6 +81,44 @@ class AXElement:
         if result == 0 and value is not None:
             return str(value)
         return ""
+
+    def get_numeric_value(self) -> float:
+        """
+        Get the value as number (for sliders). Returns 0.0 if not a number.
+        """
+        result, value = AXUIElementCopyAttributeValue(
+            self._element, kAXValueAttribute, None
+        )
+        if result == 0 and value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+        return 0.0
+
+    def get_min_value(self) -> float:
+        """Slider/range 最小值。"""
+        result, value = AXUIElementCopyAttributeValue(
+            self._element, kAXMinValueAttribute, None
+        )
+        if result == 0 and value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+        return 0.0
+
+    def get_max_value(self) -> float:
+        """Slider/range 最大值。"""
+        result, value = AXUIElementCopyAttributeValue(
+            self._element, kAXMaxValueAttribute, None
+        )
+        if result == 0 and value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+        return 0.0
 
     def set_value(self, value) -> bool:
         """
@@ -169,6 +203,23 @@ class AXElement:
             if found is not None:
                 return found
         return None
+
+    def find_all_by_role(self, role: str) -> list:
+        """
+        Find all descendant elements with the given role.
+
+        Args:
+            role: The role to search for (e.g., 'AXStaticText', 'AXSlider').
+
+        Returns:
+            list: List of AXElement objects.
+        """
+        result = []
+        for child in self.get_children():
+            if child.get_role() == role:
+                result.append(child)
+            result.extend(child.find_all_by_role(role))
+        return result
 
     def click(self) -> bool:
         """

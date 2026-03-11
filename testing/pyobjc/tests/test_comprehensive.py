@@ -18,7 +18,7 @@ from core.keyboard_input import KeyboardInput
 from core.screenshot_capture import ScreenshotCapture, ImageAnalyzer
 from core.log_monitor import LogMonitor, LogVerifier
 from config import (
-    APP_PATH, TEST_VIDEO_PATH, TEST_VIDEO_LG_PATH, LOG_DIR,
+    APP_PATH, TEST_VIDEO_PATH, TEST_VIDEO_LG_PATH, TEST_VIDEO_60S_PATH, LOG_DIR,
     SCREENSHOT_DIR, TIMEOUTS, WAIT_TIMES, BLACK_THRESHOLD, BLACK_RATIO_THRESHOLD
 )
 
@@ -31,12 +31,24 @@ class ComprehensiveTest(TestBase):
         self.screenshot = ScreenshotCapture(SCREENSHOT_DIR)
         self.log_monitor = None
         self.log_verifier = None
-        self.test_video = TEST_VIDEO_PATH
+        self.test_video = TEST_VIDEO_60S_PATH  # 使用60秒视频
+        self._used_existing_instance = False
 
-    def setup(self, app_path: str = None) -> bool:
+    def setup(self, app_path: str = None, video_path: str = None) -> bool:
         """设置测试环境"""
-        result = super().setup(app_path)
+        # 启动应用并传入视频文件
+        app_args = [video_path] if video_path else None
+        result = super().setup(app_path, app_args=app_args)
         if result:
+            # 检查是否使用了现有实例
+            if self.app_launcher and hasattr(self.app_launcher, '_process') and self.app_launcher._process is None:
+                self._used_existing_instance = True
+                print("[ComprehensiveTest] Using existing instance, opening video via UI...")
+                if video_path and os.path.exists(video_path):
+                    KeyboardInput.open_video_file(video_path, delay=WAIT_TIMES["after_open"])
+            else:
+                self._used_existing_instance = False
+
             # 初始化日志监控
             self.log_monitor = LogMonitor(LOG_DIR)
             self.log_monitor.start()
@@ -349,7 +361,12 @@ class ComprehensiveTest(TestBase):
         print("WZMediaPlayer 综合测试套件")
         print("=" * 80)
 
-        if not self.setup(APP_PATH):
+        video_path = video_path or self.test_video
+        if video_path and not os.path.exists(video_path):
+            print(f"测试视频不存在: {video_path}")
+            return
+
+        if not self.setup(APP_PATH, video_path=video_path):
             print("测试准备失败，跳过所有测试")
             return
 
@@ -357,10 +374,6 @@ class ComprehensiveTest(TestBase):
             # 基础测试
             print("\n--- 基础测试 ---")
             self.test_app_launch()
-
-            # 视频打开测试
-            print("\n--- 视频打开测试 ---")
-            self.test_open_video(video_path or TEST_VIDEO_PATH)
 
             # 渲染验证测试
             print("\n--- 渲染验证测试 ---")
@@ -382,6 +395,10 @@ class ComprehensiveTest(TestBase):
             print("\n--- 错误检查 ---")
             self.test_no_critical_errors()
 
+            # 播放进度与 UI 同步测试（检测进度条/按钮与真实播放不同步的 BUG）
+            print("\n--- 播放进度与 UI 同步测试 ---")
+            self.run_playback_sync_tests()
+
             # 3D渲染测试（可选，需要3D视频源）
             print("\n--- 3D渲染测试 ---")
             self.run_3d_tests()
@@ -393,6 +410,28 @@ class ComprehensiveTest(TestBase):
         self.generate_report()
         self.print_summary()
         self.save_report()
+
+    def run_playback_sync_tests(self):
+        """运行播放进度与 UI 同步测试（复用当前应用与窗口）。"""
+        try:
+            from tests.test_playback_sync import PlaybackSyncTest
+
+            sync_test = PlaybackSyncTest()
+            sync_test.app_launcher = self.app_launcher
+            sync_test.window_controller = self.window_controller
+            sync_test.log_monitor = self.log_monitor
+
+            sync_test.test_can_read_playback_ui_state()
+            sync_test.test_playback_time_and_slider_consistent()
+            sync_test.test_playback_time_advances_when_playing()
+            sync_test.test_seek_forward_updates_ui()
+            sync_test.test_ui_vs_log_position_when_available()
+
+            self.results.extend(sync_test.results)
+        except ImportError as e:
+            print(f"跳过播放同步测试: 无法导入 - {e}")
+        except Exception as e:
+            print(f"播放同步测试失败: {e}")
 
     def run_3d_tests(self):
         """运行3D渲染测试"""

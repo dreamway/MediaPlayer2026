@@ -83,19 +83,20 @@ class TestBase:
         self._current_test_start = None
         self._report: Optional[TestReport] = None
 
-    def setup(self, app_path: str = None) -> bool:
+    def setup(self, app_path: str = None, app_args: list = None) -> bool:
         """
         Set up the test environment by launching the application.
 
         Args:
             app_path: Optional path to the application executable.
+            app_args: Optional list of arguments passed to the app.
 
         Returns:
             bool: True if setup successful.
         """
         try:
             self.app_launcher = AppLauncher(app_path)
-            self.app_launcher.launch()
+            self.app_launcher.launch(app_args=app_args)
 
             self.window_controller = WindowController()
             self.window_controller.connect(self.app_launcher.get_pid())
@@ -153,7 +154,7 @@ class TestBase:
 
         status = "PASSED" if passed else "FAILED"
         print(f"[TEST] {status}: {test_name} ({duration_ms:.2f}ms)")
-        if error_message:
+        if (not passed) and error_message:
             print(f"        Error: {error_message}")
 
     def wait_for(self, condition: Callable[[], bool], timeout_ms: int = 5000, poll_interval_ms: int = 100) -> bool:

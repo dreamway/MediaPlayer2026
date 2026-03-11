@@ -17,7 +17,7 @@ from core.keyboard_input import KeyboardInput
 from core.screenshot_capture import ScreenshotCapture, ImageAnalyzer
 from core.log_monitor import LogMonitor
 from config import (
-    APP_PATH, TEST_VIDEO_LG_PATH, LOG_DIR, SCREENSHOT_DIR,
+    APP_PATH, TEST_VIDEO_LG_PATH, TEST_VIDEO_BBB_STEREO_PATH, LOG_DIR, SCREENSHOT_DIR,
     WAIT_TIMES, BLACK_THRESHOLD
 )
 
@@ -30,11 +30,22 @@ class Stereo3DTest(TestBase):
         self.screenshot = ScreenshotCapture(SCREENSHOT_DIR)
         self.log_monitor = None
         self.test_video = TEST_VIDEO_LG_PATH
+        self._used_existing_instance = False
 
-    def setup(self, app_path: str = None) -> bool:
+    def setup(self, app_path: str = None, video_path: str = None) -> bool:
         """设置测试环境"""
-        result = super().setup(app_path)
+        app_args = [video_path] if video_path else None
+        result = super().setup(app_path, app_args=app_args)
         if result:
+            # 检查是否使用了现有实例
+            if self.app_launcher and hasattr(self.app_launcher, '_process') and self.app_launcher._process is None:
+                self._used_existing_instance = True
+                print("[Stereo3DTest] Using existing instance, opening video via UI...")
+                if video_path and os.path.exists(video_path):
+                    KeyboardInput.open_video_file(video_path, delay=WAIT_TIMES["after_open"])
+            else:
+                self._used_existing_instance = False
+
             self.log_monitor = LogMonitor(LOG_DIR)
             self.log_monitor.start()
             time.sleep(WAIT_TIMES["medium"])
@@ -534,7 +545,12 @@ class Stereo3DTest(TestBase):
         print("WZMediaPlayer 3D渲染测试套件")
         print("=" * 80)
 
-        if not self.setup(APP_PATH):
+        video_path = video_path or TEST_VIDEO_BBB_STEREO_PATH
+        if video_path and not os.path.exists(video_path):
+            print(f"测试视频不存在: {video_path}")
+            return
+
+        if not self.setup(APP_PATH, video_path=video_path):
             print("测试准备失败，跳过所有测试")
             return
 
@@ -594,11 +610,12 @@ def main():
     args = parser.parse_args()
 
     test = Stereo3DTest()
+    video_path = args.video or TEST_VIDEO_BBB_STEREO_PATH
 
     if args.quick:
         # 快速测试模式
         print("快速测试模式")
-        if not test.setup(APP_PATH):
+        if not test.setup(APP_PATH, video_path=video_path):
             print("测试准备失败")
             return 1
         try:
@@ -610,7 +627,7 @@ def main():
         test.print_summary()
     else:
         # 完整测试
-        test.run_all_tests(args.video)
+        test.run_all_tests(video_path)
 
     return 0
 
