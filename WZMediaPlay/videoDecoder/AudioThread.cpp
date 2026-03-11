@@ -745,6 +745,17 @@ int AudioThread::decodeFrame()
         return 0;
     }
 
+    // 关键修复：检查 swrctx_ 是否有效
+    // 如果重采样器未初始化，不能继续解码
+    if (!swrctx_) {
+        logger->error("AudioThread::decodeFrame: swrctx_ is null, decoder not properly initialized");
+        return 0;
+    }
+
+    // 关键修复：连续解码失败计数器，避免无限循环导致崩溃
+    int consecutiveFailures = 0;
+    const int MAX_CONSECUTIVE_FAILURES = 100;
+
     while (!controller_->isStopping() && !controller_->isStopped()) {
         // 先尝试接收解码后的帧
         int ret = avcodec_receive_frame(codecctx_.get(), decodedFrame_.get());
@@ -777,6 +788,12 @@ int AudioThread::decodeFrame()
                 char errbuf[AV_ERROR_MAX_STRING_SIZE];
                 av_strerror(pret, errbuf, AV_ERROR_MAX_STRING_SIZE);
                 logger->error("AudioThread::decodeFrame: Failed to send packet: {} ({})", pret, errbuf);
+
+                // 关键修复：连续失败计数
+                if (++consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                    logger->error("AudioThread::decodeFrame: Too many consecutive failures ({}), stopping decode", consecutiveFailures);
+                    break;
+                }
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }
@@ -807,6 +824,13 @@ int AudioThread::decodeFrame()
                 char errbuf[AV_ERROR_MAX_STRING_SIZE];
                 av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
                 logger->error("AudioThread::decodeFrame: Decode error: {} ({})", ret, errbuf);
+
+                // 关键修复：连续失败计数
+                if (++consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                    logger->error("AudioThread::decodeFrame: Too many consecutive failures ({}), stopping decode", consecutiveFailures);
+                    break;
+                }
+
                 avcodec_flush_buffers(codecctx_.get());
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
@@ -814,6 +838,8 @@ int AudioThread::decodeFrame()
         } else {
             // 成功接收到帧，更新音频线程健康检查时间戳
             controller_->getLastAudioFrameTime() = std::chrono::steady_clock::now();
+            // 关键修复：重置连续失败计数器
+            consecutiveFailures = 0;
         }
 
         if (decodedFrame_->nb_samples <= 0) {

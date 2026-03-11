@@ -1,6 +1,6 @@
 # WZMediaPlayer Bug Fixes & Refactoring Log
 
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-03-12
 **Status**: Active Development
 
 ## 与重构进展记录的对应关系
@@ -129,6 +129,22 @@ This document tracks all known bugs, fixes applied, and refactoring work for WZM
 - **根因**: `DemuxerThread::requestSeek()` 在未锁定 VideoThread/AudioThread 时调用 `Reset()`，导致 use-after-free（线程可能正持有 packet 引用解码）
 - **修复**: 移除 requestSeek 中的队列清空，仅由 `PlayController::seek()` 在锁定线程后执行 Reset
 - **附带修复**: MainWindow 快捷键 Seek 传入参数错误（传秒而非毫秒），已改为 `seek(seekPosMs)`
+
+**补充修复 (2026-03-12 多音轨视频切换崩溃)**:
+- **现象**: 切换到包含多个音轨的视频时崩溃，概率很高
+- **根因**: `PlayController::initializeCodecs()` 遍历所有音频流，每个都调用 `streamComponentOpen()`，导致多个音频解码器被设置到同一个 AudioThread
+- **崩溃路径**:
+  1. 视频有 2 个音轨（如 AC-3 和 MP3）
+  2. `initializeCodecs()` 为两个音轨都创建了解码器
+  3. 后创建的解码器覆盖了 `AudioThread` 的 `dec` 指针
+  4. 但 packet queue 中可能还有旧格式的 packet（如 MP3 packet）
+  5. MP3 packet 被发送到 AC-3 解码器，`swr_convert` 收到无效数据导致崩溃
+- **修复**:
+  1. `PlayController::initializeCodecs()` 中只处理选定的音频流（`audioStreamIndex_`）
+  2. `AudioThread::decodeFrame()` 增加 `swrctx_` 有效性检查
+  3. `AudioThread::decodeFrame()` 增加连续解码失败计数器，避免无限循环
+  4. `AVThread` 增加 mutex lock count 追踪，确保安全析构
+- **测试**: 压力测试 `test_stress_switch.py` 10 次切换无崩溃
 
 **Testing Recommendations**:
 1. Build project: `build.bat`

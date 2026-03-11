@@ -67,6 +67,7 @@ protected:
     bool waiting_ = false;
     QRecursiveMutex mutex_;
     QMutex updateMutex_;
+    int mutexLockCount_ = 0;  // 追踪 mutex_ 的锁计数（用于安全析构）
 
 private:
     static const int MUTEXWAIT_TIMEOUT = 1000;  // 1秒超时

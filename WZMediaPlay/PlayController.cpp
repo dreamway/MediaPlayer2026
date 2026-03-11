@@ -117,10 +117,18 @@ bool PlayController::open(const QString &filename)
     // 如果已经打开，先停止
     if (isOpened()) {
         stop();
-        // 切换视频时立即清空渲染器，避免出现“声音已是新视频但画面仍是旧视频”的残留
+        // 切换视频时立即清空渲染器，避免出现"声音已是新视频但画面仍是旧视频"的残留
         if (videoRenderer_) {
             videoRenderer_->clear();
         }
+
+        // 关键修复：确保音频包队列被完全清空
+        // stop() 中会 Reset 队列，但为了安全再确认一次
+        aPackets_.Reset("AudioQueue-VideoSwitch");
+
+        // 关键修复：等待一小段时间确保所有线程资源完全释放
+        // 避免 swrctx_ 被旧线程访问时新线程已经开始初始化
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
     // 清除 seeking 状态（确保新打开文件时状态正确）
@@ -409,17 +417,18 @@ bool PlayController::initializeCodecs()
         auto *codecpar = fmtctx->streams[i]->codecpar;
         switch (codecpar->codec_type) {
         case AVMEDIA_TYPE_VIDEO:
-            if (videoStreamIndex_ >= 0) {
+            if (videoStreamIndex_ >= 0 && static_cast<int>(i) == videoStreamIndex_) {
                 videoStreamIndex_ = streamComponentOpen(i);
             }
             break;
         case AVMEDIA_TYPE_AUDIO:
-            if (audioStreamIndex_ >= 0) {
+            // 关键修复：只处理选定的音频流，避免多个音频解码器被设置到同一个 AudioThread
+            if (audioStreamIndex_ >= 0 && static_cast<int>(i) == audioStreamIndex_) {
                 audioStreamIndex_ = streamComponentOpen(i);
             }
             break;
         case AVMEDIA_TYPE_SUBTITLE:
-            if (subtitleStreamIndex_ >= 0) {
+            if (subtitleStreamIndex_ >= 0 && static_cast<int>(i) == subtitleStreamIndex_) {
                 subtitleStreamIndex_ = streamComponentOpen(i);
             }
             break;
@@ -1655,7 +1664,7 @@ void PlayController::onDemuxerThreadErrorOccurred(int errorCode)
 
 nanoseconds PlayController::getMasterClock() const
 {
-    // 音频为主时钟时：优先使用 Audio 的实际播放位置（AL_SAMPLE_OFFSET），而非“最后写入 PTS”
+    // 音频为主时钟时：优先使用 Audio 的实际播放位置（AL_SAMPLE_OFFSET），而非"最后写入 PTS"
     // 修复：音视频同步、进度条与实际播放不同步（日志分析 BUG 1、3）
     if (sync_ == SyncMaster::Audio && audioThread_) {
         nanoseconds audioClock = audioThread_->getClock();
