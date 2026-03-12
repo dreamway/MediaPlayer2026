@@ -28,11 +28,10 @@ DemuxerThread::DemuxerThread(PlayController *controller, QObject *parent)
 
 DemuxerThread::~DemuxerThread()
 {
-    // 注意：requestStop() 已删除，停止状态统一由 PlayController 的状态机管理
-    // 如果线程还在运行，通过 PlayController 的 stop() 方法来停止
-    if (controller_) {
-        controller_->stop();
-    }
+    // 注意：不调用 controller_->stop()，因为：
+    // 1. 如果 DemuxerThread 被 stop() 中的 shared_ptr 析构，stop() 已经被调用过
+    // 2. 如果 PlayController 正在析构，controller_ 可能无效
+    // 3. 停止状态由 PlayController 的状态机统一管理
 
     // 检查线程是否还在运行（添加异常保护）
     bool wasRunning = false;

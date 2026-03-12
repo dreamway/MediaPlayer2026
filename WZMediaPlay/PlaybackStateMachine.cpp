@@ -124,7 +124,10 @@ bool PlaybackStateMachine::isValidTransition(PlaybackState from, PlaybackState t
             return to == PlaybackState::Stopped || to == PlaybackState::Error;
             
         case PlaybackState::Stopped:
-            return to == PlaybackState::Idle || to == PlaybackState::Opening || to == PlaybackState::Error;
+            // 允许转换到 Seeking（用于 EOF 后重新 seek 的场景）
+            return to == PlaybackState::Idle || to == PlaybackState::Opening ||
+                   to == PlaybackState::Ready || to == PlaybackState::Seeking ||
+                   to == PlaybackState::Error;
             
         case PlaybackState::Error:
             return to == PlaybackState::Stopped || to == PlaybackState::Idle;
@@ -152,7 +155,11 @@ const char* PlaybackStateMachine::stateName(PlaybackState state) {
 bool PlaybackStateMachine::enterSeeking(const std::string& reason)
 {
     PlaybackState current = getState();
-    if (current != PlaybackState::Playing && current != PlaybackState::Paused) {
+    // 允许从 Playing、Paused、Stopped 状态进入 Seeking
+    // Stopped 状态用于 EOF 后重新 seek 的场景
+    if (current != PlaybackState::Playing &&
+        current != PlaybackState::Paused &&
+        current != PlaybackState::Stopped) {
         if (logger) {
             logger->warn("PlaybackStateMachine::enterSeeking: Cannot seek from state {} (reason: {})",
                         stateName(current), reason);
@@ -169,7 +176,10 @@ bool PlaybackStateMachine::exitSeeking(const std::string& reason)
         return false;
     }
     PlaybackState target = preSeekState_.load(std::memory_order_acquire);
-    if (target != PlaybackState::Playing && target != PlaybackState::Paused) {
+    // 从 Stopped 状态来的，退出 seeking 后应该回到 Ready 状态（准备播放）
+    if (target == PlaybackState::Stopped) {
+        target = PlaybackState::Ready;
+    } else if (target != PlaybackState::Playing && target != PlaybackState::Paused) {
         target = PlaybackState::Playing;
     }
     return transitionTo(target, reason.empty() ? "exitSeeking" : reason);

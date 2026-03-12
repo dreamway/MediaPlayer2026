@@ -235,6 +235,7 @@ bool VideoThread::handleSeekingState(bool &wasSeekingBefore)
         wasSeekingBefore = false;
         wasSeekingRecently_ = true;
         isFirstFrameAfterSeek_ = true;  // 标记 seeking 后的第一帧，强制渲染
+        framesAfterSeek_ = 0;  // 重置 seeking 后帧计数
         videoBasePtsSet = false;  // 重置视频基准 PTS，让 Seek 后第一帧重新建立基准
         seekingStartTime_ = std::chrono::steady_clock::now(); // 记录seeking开始时间，用于超时保护
         eofAfterSeekCount_ = 0;
@@ -754,17 +755,58 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
     const nanoseconds MAX_FRAME_LAG = nanoseconds{1LL * 1000000000}; // 1秒
     bool frameExpired = (diff < -MAX_FRAME_LAG);                     // 视频滞后超过1秒
 
-    // 关键修复：seeking 后的第一帧强制渲染，不应用同步跳帧逻辑
+    // 关键修复：seeking 后的帧强制渲染，直到视频时钟追上帧 PTS
     // 这解决了 seek 到非关键帧位置时，关键帧 PTS 超前于 seek 目标位置导致帧被跳过的问题
+    //
+    // 策略：
+    // 1. seeking 后开始渲染，不跳帧
+    // 2. 持续渲染直到差异减小到合理范围（< maxSyncThreshold * 2）
+    // 3. 或者直到视频开始滞后于音频（diff < 0），表示时钟已追上
+
+    const int SEEK_GRACE_FRAMES_MIN = 5;  // 最少强制渲染帧数
+    nanoseconds maxThreshold = controller_->getMaxSyncThreshold();
+    bool inSeekGracePeriod = framesAfterSeek_ > 0;
+    bool diffStillLarge = diff > maxThreshold * 2;  // 差异仍然很大
+    bool videoAhead = diff > nanoseconds{0};  // 视频超前于音频
+
     if (isFirstFrameAfterSeek_) {
-        isFirstFrameAfterSeek_ = false;  // 只对第一帧生效
+        // seeking 后第一帧，开始 grace period
+        framesAfterSeek_ = 1;
+        isFirstFrameAfterSeek_ = false;
         SPDLOG_LOGGER_INFO(
             logger,
-            "VideoThread::renderFrame: First frame after seek, forcing render (framePts={}ms, masterClock={}ms, diff={}ms)",
+            "VideoThread::renderFrame: First frame after seek, starting grace period (framePts={}ms, masterClock={}ms, diff={}ms)",
             std::chrono::duration_cast<milliseconds>(framePts).count(),
             std::chrono::duration_cast<milliseconds>(masterClock).count(),
             std::chrono::duration_cast<milliseconds>(diff).count());
-        // 强制渲染，不跳过
+    } else if (inSeekGracePeriod && (framesAfterSeek_ < SEEK_GRACE_FRAMES_MIN || (videoAhead && diffStillLarge))) {
+        // 在 grace period 内，且：
+        // - 还没达到最小帧数，或者
+        // - 视频仍然超前且差异仍然很大
+        // 继续强制渲染
+        framesAfterSeek_++;
+        if (framesAfterSeek_ % 10 == 0) {  // 每 10 帧输出一次日志
+            SPDLOG_LOGGER_INFO(
+                logger,
+                "VideoThread::renderFrame: Grace frame {} after seek (diff={}ms, still catching up)",
+                framesAfterSeek_,
+                std::chrono::duration_cast<milliseconds>(diff).count());
+        }
+    } else if (inSeekGracePeriod) {
+        // grace period 结束
+        SPDLOG_LOGGER_INFO(
+            logger,
+            "VideoThread::renderFrame: Grace period ended at frame {} (diff={}ms)",
+            framesAfterSeek_,
+            std::chrono::duration_cast<milliseconds>(diff).count());
+        framesAfterSeek_ = 0;  // 结束 grace period
+    }
+
+    // 判断是否应该跳帧
+    bool shouldSkip = false;
+    if (framesAfterSeek_ > 0) {
+        // 在 grace period 内，不跳帧
+        shouldSkip = false;
     } else if (frameExpired) {
         // 如果视频滞后太多，强制渲染，避免一直卡顿
         if (logger && (frameCount_ % 10 == 0)) { // 每10帧输出一次，避免日志过多（BUG-026：降为 debug 减噪）
@@ -898,6 +940,7 @@ void VideoThread::run()
     wasSeekingRecently_ = false;
     eofAfterSeekCount_ = 0;
     isFirstFrameAfterSeek_ = false;  // 重置 seeking 后第一帧标志
+    framesAfterSeek_ = 0;  // 重置 seeking 后帧计数
 
     // 重置跳帧优化相关状态
     lastRenderedFrame_.clear();

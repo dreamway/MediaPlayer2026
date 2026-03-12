@@ -987,13 +987,44 @@ bool PlayController::seek(int64_t positionMs)
 
         // 重新创建并启动 DemuxerThread
         try {
+            // 关键修复：检查 demuxer 是否有效
+            if (!demuxer_) {
+                SPDLOG_LOGGER_ERROR(logger, "PlayController::seek: Demuxer is null, cannot restart DemuxerThread");
+                stateMachine_.transitionTo(PlaybackState::Error, "Demuxer is null during seek restart");
+                return false;
+            }
+
+            if (!demuxer_->isOpened()) {
+                SPDLOG_LOGGER_ERROR(logger, "PlayController::seek: Demuxer is not opened, cannot restart DemuxerThread");
+                stateMachine_.transitionTo(PlaybackState::Error, "Demuxer not opened during seek restart");
+                return false;
+            }
+
+            int videoIdx = demuxer_->getVideoStreamIndex();
+            int audioIdx = demuxer_->getAudioStreamIndex();
+            int subtitleIdx = demuxer_->getSubtitleStreamIndex();
+
+            SPDLOG_LOGGER_INFO(logger, "PlayController::seek: Stream indices: video={}, audio={}, subtitle={}", videoIdx, audioIdx, subtitleIdx);
+
+            // 验证流索引有效性
+            if (videoIdx < 0) {
+                SPDLOG_LOGGER_ERROR(logger, "PlayController::seek: Invalid video stream index: {}", videoIdx);
+                stateMachine_.transitionTo(PlaybackState::Error, "Invalid video stream index during seek restart");
+                return false;
+            }
+
             demuxThread_ = std::make_shared<DemuxerThread>(this, this);
 
             // 断开finished()信号连接，手动管理线程生命周期
             disconnectThreadSignals(demuxThread_.get());
 
             demuxThread_->setDemuxer(demuxer_.get());
-            demuxThread_->setStreamIndices(demuxer_->getVideoStreamIndex(), demuxer_->getAudioStreamIndex(), demuxer_->getSubtitleStreamIndex());
+            demuxThread_->setStreamIndices(videoIdx, audioIdx, subtitleIdx);
+
+            // 关键修复：重置队列状态，清除 finished 标志
+            vPackets_.Reset("VideoQueue-SeekRestart");
+            aPackets_.Reset("AudioQueue-SeekRestart");
+
             demuxThread_->setVideoPacketQueue(&vPackets_);
             demuxThread_->setAudioPacketQueue(&aPackets_);
 
@@ -1002,18 +1033,29 @@ bool PlayController::seek(int64_t positionMs)
             connect(demuxThread_.get(), &DemuxerThread::eofReached, this, &PlayController::onDemuxerThreadEofReached, Qt::UniqueConnection);
             connect(demuxThread_.get(), &DemuxerThread::errorOccurred, this, &PlayController::onDemuxerThreadErrorOccurred, Qt::UniqueConnection);
 
+            // 关键修复：在启动 DemuxerThread 之前，先设置 seek 请求和 seeking 状态
+            // 这样 DemuxerThread 启动后会首先检测到 seeking 状态并执行 seek 操作
+            // 而不是尝试读取 packet（由于 EOF 会立即失败）
+
+            // 计算 seek 参数
+            int64_t positionUs = positionMs * 1000;
+            bool backward = (positionMs < getCurrentPositionMs());
+
+            // 1. 先设置 seek 请求参数
+            demuxThread_->requestSeek(positionUs, backward);
+            SPDLOG_LOGGER_INFO(logger, "PlayController::seek: requestSeek set before starting DemuxerThread (positionUs={})", positionUs);
+
+            // 2. 转换到 Seeking 状态（在启动线程之前）
+            stateMachine_.transitionTo(PlaybackState::Seeking, "Seeking after EOF restart");
+
+            // 3. 启动 DemuxerThread
             demuxThread_->start();
-            SPDLOG_LOGGER_INFO(logger, "PlayController::seek: DemuxerThread restarted, will process seek request");
+            SPDLOG_LOGGER_INFO(logger, "PlayController::seek: DemuxerThread restarted with pending seek request");
 
-            // 等待一小段时间确保线程已经启动
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            // 等待 seek 完成（DemuxerThread 会发送 seekFinished 信号）
+            // 不需要在这里等待，信号会触发 onDemuxerThreadSeekFinished
+            return true;  // seek 已设置，直接返回等待信号
 
-            // 验证线程已启动
-            if (!demuxThread_->isRunning()) {
-                SPDLOG_LOGGER_ERROR(logger, "PlayController::seek: DemuxerThread failed to start");
-                stateMachine_.transitionTo(PlaybackState::Error, "DemuxerThread failed to start");
-                return false;
-            }
         } catch (const std::exception &e) {
             SPDLOG_LOGGER_ERROR(logger, "PlayController::seek: Exception while restarting DemuxerThread: {}", e.what());
             stateMachine_.transitionTo(PlaybackState::Error, "Exception restarting DemuxerThread: " + std::string(e.what()));

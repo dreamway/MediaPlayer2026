@@ -98,6 +98,7 @@ private:
     int eofAfterSeekCount_{0};  // Seeking 后的 EOF 计数（用于处理解码器状态异常）
     std::chrono::steady_clock::time_point seekingStartTime_;  // seeking开始时间，用于超时保护
     bool isFirstFrameAfterSeek_{false};  // seeking 后的第一帧，强制渲染（不应用同步跳帧逻辑）
+    int framesAfterSeek_{0};  // seeking 后已渲染的帧数（用于 grace period）
     
     // FPS 计算相关
     std::chrono::steady_clock::time_point lastFpsTime_;
