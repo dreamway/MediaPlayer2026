@@ -736,7 +736,12 @@ void StereoOpenGLCommon::setStereoShaderUniforms()
     shaderProgramStereo->setUniformValue("VecRegion", QVector4D(m_stereoRegion[0], m_stereoRegion[1], m_stereoRegion[2], m_stereoRegion[3]));
     shaderProgramStereo->setUniformValue("iParallaxOffset", m_parallaxShift);
 
-    // 注意：还原后的shader使用硬编码的YUV到RGB转换系数，不再需要iVideoFormat和uYUVtRGB uniform
+    // 设置颜色空间转换 uniform（YUV 到 RGB）
+    if (videoFormat != 0) {
+        // YUV 到 RGB 转换矩阵
+        const QMatrix3x3 mat = Functions::getYUVtoRGBmatrix(m_colorSpace);
+        shaderProgramStereo->setUniformValue("uYUVtRGB", mat);
+    }
 
     // 检查 uniform 设置是否成功（用于调试，每100次检查一次）
     static int uniformCheckCounter = 0;
