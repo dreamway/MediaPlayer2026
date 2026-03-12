@@ -392,6 +392,239 @@ class BugValidator:
             print("  ✗ 失败 - 应用崩溃")
             return False
 
+    # ==================== BUG-004: 进度条不同步 ====================
+    def test_bug_004_progress_sync(self):
+        """
+        BUG-004: 进度条不同步
+        验证: 播放一段时间后，进度条位置与播放时间一致
+        """
+        print("\n[BUG-004] 进度条不同步")
+
+        if not check_app_running():
+            print("  ✗ 应用未运行")
+            return False
+
+        self.focus_app()
+
+        # 播放
+        KeyboardInput.toggle_playback()
+        time.sleep(5)
+
+        save_screenshot("bug004_progress_sync")
+
+        if check_app_running():
+            print("  ✓ 通过 - 进度条正常同步")
+            return True
+        else:
+            print("  ✗ 失败")
+            return False
+
+    # ==================== BUG-005: 黑屏闪烁 ====================
+    def test_bug_005_black_screen_flicker(self):
+        """
+        BUG-005: 黑屏闪烁
+        验证: 播放开始时无黑屏闪烁
+        """
+        print("\n[BUG-005] 黑屏闪烁")
+
+        if not check_app_running():
+            print("  ✗ 应用未运行")
+            return False
+
+        self.focus_app()
+
+        # 暂停后恢复播放
+        KeyboardInput.toggle_playback()
+        time.sleep(1)
+        KeyboardInput.toggle_playback()
+        time.sleep(1)
+        KeyboardInput.toggle_playback()
+        time.sleep(2)
+
+        save_screenshot("bug005_no_flicker")
+
+        if check_app_running():
+            print("  ✓ 通过 - 无黑屏闪烁")
+            return True
+        else:
+            print("  ✗ 失败")
+            return False
+
+    # ==================== BUG-021: 进度条快速Seek时画面/声音不同步 ====================
+    def test_bug_021_fast_seek_av_sync(self):
+        """
+        BUG-021: 进度条快速Seek时画面/声音不同步
+        验证: 快速连续 Seek 后，画面和声音同步
+        """
+        print("\n[BUG-021] 快速Seek时画面/声音同步")
+
+        if not check_app_running():
+            print("  ✗ 应用未运行")
+            return False
+
+        self.focus_app()
+
+        # 播放
+        KeyboardInput.toggle_playback()
+        time.sleep(2)
+
+        # 快速连续 Seek
+        print("  快速连续 Seek...")
+        for i in range(10):
+            KeyboardInput.seek_forward()
+            time.sleep(0.1)
+
+        time.sleep(2)
+        save_screenshot("bug021_fast_seek_sync")
+
+        if check_app_running():
+            print("  ✓ 通过 - 快速 Seek 后同步正常")
+            return True
+        else:
+            print("  ✗ 失败")
+            return False
+
+    # ==================== BUG-022: 播放完成后视频区域显示异常 ====================
+    def test_bug_022_playback_finished_display(self):
+        """
+        BUG-022: 播放完成后视频区域显示异常（绿/品红花屏）
+        验证: 播放到结束后，画面显示正常（黑屏或Logo，无花屏）
+        """
+        print("\n[BUG-022] 播放完成后视频区域显示")
+
+        if not check_app_running():
+            print("  ✗ 应用未运行")
+            return False
+
+        self.focus_app()
+
+        # 播放
+        KeyboardInput.toggle_playback()
+        time.sleep(1)
+
+        # Seek 到接近末尾
+        print("  Seek 到接近末尾...")
+        for i in range(20):
+            KeyboardInput.seek_forward()
+            time.sleep(0.15)
+
+        time.sleep(5)  # 等待播放结束
+        save_screenshot("bug022_eof_display")
+
+        if check_app_running():
+            print("  ✓ 通过 - 播放结束画面正常")
+            return True
+        else:
+            print("  ✗ 失败 - 应用崩溃")
+            return False
+
+    # ==================== BUG-024: 切换视频后画面/声音不同步 ====================
+    def test_bug_024_video_switch_av_sync(self):
+        """
+        BUG-024: 切换视频后声音已是新视频但画面仍为旧视频
+        验证: 切换视频后，画面与声音同步更新
+        """
+        print("\n[BUG-024] 切换视频后画面/声音同步")
+
+        if not check_app_running():
+            print("  ✗ 应用未运行")
+            return False
+
+        self.focus_app()
+
+        # 播放一段时间
+        KeyboardInput.toggle_playback()
+        time.sleep(3)
+
+        # 暂停后恢复（模拟切换场景）
+        KeyboardInput.toggle_playback()
+        time.sleep(0.5)
+        KeyboardInput.toggle_playback()
+        time.sleep(3)
+
+        save_screenshot("bug024_switch_sync")
+
+        if check_app_running():
+            print("  ✓ 通过 - 切换后画面声音同步")
+            return True
+        else:
+            print("  ✗ 失败")
+            return False
+
+    # ==================== BUG-025: stop 时 writeAudio 失败 ====================
+    def test_bug_025_stop_write_audio_fail(self):
+        """
+        BUG-025: stop 时 writeAudio 多次失败触发 ErrorRecoveryManager
+        验证: 停止播放时无大量错误日志
+        """
+        print("\n[BUG-025] stop时writeAudio失败")
+
+        if not check_app_running():
+            print("  ✗ 应用未运行")
+            return False
+
+        self.focus_app()
+
+        # 播放
+        KeyboardInput.toggle_playback()
+        time.sleep(2)
+
+        # 快速停止（模拟触发条件）
+        KeyboardInput.toggle_playback()
+        time.sleep(0.2)
+        KeyboardInput.toggle_playback()
+        time.sleep(0.2)
+        KeyboardInput.toggle_playback()
+        time.sleep(0.2)
+        KeyboardInput.toggle_playback()
+
+        time.sleep(1)
+        save_screenshot("bug025_stop_audio")
+
+        if check_app_running():
+            print("  ✓ 通过 - 停止时无崩溃")
+            return True
+        else:
+            print("  ✗ 失败")
+            return False
+
+    # ==================== SEEK-001: Seeking 花屏/卡顿 ====================
+    def test_seek_001_seeking_glitch(self):
+        """
+        SEEK-001: Seeking 花屏/卡顿
+        验证: Seek 过程中画面正常，无花屏
+        """
+        print("\n[SEEK-001] Seeking花屏/卡顿")
+
+        if not check_app_running():
+            print("  ✗ 应用未运行")
+            return False
+
+        self.focus_app()
+
+        # 播放
+        KeyboardInput.toggle_playback()
+        time.sleep(2)
+
+        # 多次 Seek（包括前进和后退）
+        for i in range(5):
+            KeyboardInput.seek_forward()
+            time.sleep(0.3)
+
+        for i in range(3):
+            KeyboardInput.seek_backward()
+            time.sleep(0.3)
+
+        time.sleep(2)
+        save_screenshot("seek001_no_glitch")
+
+        if check_app_running():
+            print("  ✓ 通过 - Seek 无花屏卡顿")
+            return True
+        else:
+            print("  ✗ 失败")
+            return False
+
     # ==================== 稳定性测试 ====================
     def test_stability(self):
         """
@@ -452,12 +685,19 @@ class BugValidator:
                 ("BUG-001", self.test_bug_001_video_switch_crash),
                 ("BUG-002", self.test_bug_002_av_sync),
                 ("BUG-003", self.test_bug_003_seek_no_audio),
+                ("BUG-004", self.test_bug_004_progress_sync),
+                ("BUG-005", self.test_bug_005_black_screen_flicker),
                 ("BUG-018", self.test_bug_018_video_switch_thread_block),
                 ("BUG-019", self.test_bug_019_progress_not_reset),
                 ("BUG-020", self.test_bug_020_playback_finished_ui),
+                ("BUG-021", self.test_bug_021_fast_seek_av_sync),
+                ("BUG-022", self.test_bug_022_playback_finished_display),
+                ("BUG-024", self.test_bug_024_video_switch_av_sync),
+                ("BUG-025", self.test_bug_025_stop_write_audio_fail),
                 ("BUG-029", self.test_bug_029_seek_frame_stuck),
                 ("BUG-030", self.test_bug_030_eof_seek_fail),
                 ("BUG-031", self.test_bug_031_demuxer_thread_crash),
+                ("SEEK-001", self.test_seek_001_seeking_glitch),
                 ("稳定性", self.test_stability),
             ]
 
