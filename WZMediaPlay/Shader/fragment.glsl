@@ -21,6 +21,12 @@ uniform sampler2D textureUV;  // NV12 格式的 UV 交织纹理
 // 视频格式：0=RGB, 1=NV12, 2=YUV420P
 uniform int iVideoFormat;
 
+// 动态色彩空间转换矩阵（从 C++ 传入）
+uniform mat3 uYUVtRGB;
+
+// 色彩范围乘数（用于 limited/full range）
+uniform vec2 uRangeMultiplier;
+
 vec3 normal_2d(sampler2D inputTexture, vec2 TexCoord) {
 	vec3 rgb = texture(inputTexture, TexCoord).xyz;
 	return rgb;
@@ -684,7 +690,7 @@ void main()
 			v = stereo_display(textureV, TexCoord, iStereoFlag, iStereoInputFormat, iStereoOutputFormat, bEnableRegion, region, iParallaxOffset).r;
 		}
 
-		// YUV到RGB转换（BT.601标准）
+		// YUV到RGB转换（使用动态色彩空间矩阵）
 		// 注意：GL_LUMINANCE格式已经将0-255归一化到0-1
 		// Limited range: Y在16-235，U/V在16-240（centered at 128）
 		// Full range: Y/U/V都在0-255
@@ -692,21 +698,10 @@ void main()
 		yuv.y = u - 0.5;     // U 分量
 		yuv.z = v - 0.5;     // V 分量
 
-		// BT.601 YUV到RGB转换矩阵
-		// R = Y + 1.402 * (V - 0.5)
-		// G = Y - 0.344 * (U - 0.5) - 0.714 * (V - 0.5)
-		// B = Y + 1.772 * (U - 0.5)
-		// 展开后：
-		// R = 1.164*Y + 0.0*U + 1.596*V
-		// G = 1.164*Y - 0.391*U - 0.813*V
-		// B = 1.164*Y + 2.018*U + 0.0*V
-		vec3 yuv2r = vec3(1.164, 0.0, 1.596);
-		vec3 yuv2g = vec3(1.164, -0.391, -0.813);
-		vec3 yuv2b = vec3(1.164, 2.018, 0.0);
-
-		rgb.x = dot(yuv, yuv2r);
-		rgb.y = dot(yuv, yuv2g);
-		rgb.z = dot(yuv, yuv2b);
+		// 使用动态色彩空间转换矩阵（uYUVtRGB）
+		// 矩阵已经根据视频的 colorSpace 设置正确的转换系数
+		// 支持 BT.601, BT.709, SMPTE170M, BT.2020 等色彩空间
+		rgb = uYUVtRGB * yuv;
 
 		// 限制RGB值在0-1范围内
 		rgb = clamp(rgb, 0.0, 1.0);

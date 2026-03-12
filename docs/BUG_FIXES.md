@@ -146,6 +146,19 @@ This document tracks all known bugs, fixes applied, and refactoring work for WZM
   4. `AVThread` 增加 mutex lock count 追踪，确保安全析构
 - **测试**: 压力测试 `test_stress_switch.py` 10 次切换无崩溃
 
+**补充修复 (2026-03-12 Seek 后画面不更新)**:
+- **现象**: 快速 Seek 后，声音正确跟上了新位置，但画面停留在 Seek 前的旧帧
+- **日志特征**: `VideoThread::run: renderFrame failed 16300 times`（持续失败）
+- **根因**: Seek 到非关键帧位置时，FFmpeg 返回最近的关键帧，该关键帧的 PTS 可能超前于 seek 目标位置
+- **问题逻辑**:
+  1. Seek 目标: `8879ms`，解码出的关键帧 PTS: `15014ms`（超前约 6 秒）
+  2. 同步计算: `diff = framePts - masterClock = 6135ms`
+  3. `diff > maxSyncThreshold * 2 = 1000ms`，帧被判定为"超前太多"而跳过
+  4. 后续所有帧都被跳过，画面永远停留在旧帧
+- **修复**: 添加 `isFirstFrameAfterSeek_` 标志，seeking 结束后的第一帧强制渲染，不应用同步跳帧逻辑
+- **文件**: `VideoThread.h`, `VideoThread.cpp`
+- **测试**: 快速连续 Seek 5 次，应用正常运行，无 renderFrame failed 日志
+
 **Testing Recommendations**:
 1. Build project: `build.bat`
 2. Test scenario:
