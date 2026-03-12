@@ -557,6 +557,8 @@ void OpenGLCommon::paintGL()
 
             // 清除帧数据以释放内存（避免队列满）
             // 简化设计：数据已经上传到纹理，可以清除 CPU 端的数据
+            // 在清除帧之前保存帧高度（用于颜色空间猜测）
+            m_lastFrameHeight = videoFrame.isEmpty() ? 0 : videoFrame.height(0);
             videoFrame.clear();
             hasImage = true;
         } else {
@@ -598,7 +600,9 @@ void OpenGLCommon::paintGL()
         // 设置颜色空间转换 uniform（核心功能：只在 YUV 格式时设置）
         if (videoFormat != 0) {
             // YUV 到 RGB 转换矩阵
-            const QMatrix3x3 mat = Functions::getYUVtoRGBmatrix(m_colorSpace);
+            // 使用保存的帧高度（在清除帧之前保存），用于在颜色空间未指定时根据分辨率猜测正确的颜色空间
+            const int frameHeight = m_lastFrameHeight;
+            const QMatrix3x3 mat = Functions::getYUVtoRGBmatrix(m_colorSpace, frameHeight);
             shaderProgramVideo->setUniformValue("uYUVtRGB", mat);
         }
 

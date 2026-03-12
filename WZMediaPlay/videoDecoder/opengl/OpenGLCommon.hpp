@@ -134,6 +134,9 @@ public:
     bool isPaused, isOK, hasImage, doReset, setMatrix, correctLinesize, m_gl3;
     int outW, outH, verticesIdx;
 
+    // 保存的帧高度（在清除帧之前保存，用于颜色空间猜测）
+    int m_lastFrameHeight = 0;
+
     // OSD 支持已移除，只保留核心渲染功能
 
     QTimer updateTimer;

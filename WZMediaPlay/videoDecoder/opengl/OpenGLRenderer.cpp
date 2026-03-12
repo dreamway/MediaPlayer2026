@@ -439,7 +439,23 @@ void OpenGLRenderer::updateColorSpace(const Frame &frame)
         drawable_->m_limited = frame.isLimited();
 
         if (logger) {
-            logger->debug("OpenGLRenderer::updateColorSpace: Color space updated");
+            // 详细记录颜色空间信息，用于调试硬件解码颜色问题
+            const char* colorSpaceName = "unknown";
+            switch (frame.colorSpace()) {
+                case AVCOL_SPC_BT709: colorSpaceName = "BT.709"; break;
+                case AVCOL_SPC_BT470BG:
+                case AVCOL_SPC_SMPTE170M: colorSpaceName = "BT.601"; break;
+                case AVCOL_SPC_BT2020_NCL:
+                case AVCOL_SPC_BT2020_CL: colorSpaceName = "BT.2020"; break;
+                case AVCOL_SPC_UNSPECIFIED: colorSpaceName = "UNSPECIFIED"; break;
+                default: colorSpaceName = "other"; break;
+            }
+            logger->info("OpenGLRenderer::updateColorSpace: Color space updated - space={} ({}), primaries={}, trc={}, limited={}, depth={}",
+                        static_cast<int>(frame.colorSpace()), colorSpaceName,
+                        static_cast<int>(frame.colorPrimaries()),
+                        static_cast<int>(frame.colorTrc()),
+                        frame.isLimited(),
+                        frame.depth());
         }
     }
 }

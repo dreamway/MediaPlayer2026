@@ -436,65 +436,111 @@ void StereoOpenGLCommon::paintGLStereo()
         };
 
         // 诊断日志
-        if (logger && paintGLStereoCounter % 100 == 0) {
+        if (logger && paintGLStereoCounter % 10 == 0) {
             logger->info("StereoOpenGLCommon::paintGLStereo: Frame info - numPlanes: {}, Y: {}x{}, U: {}x{}, V: {}x{}, linesize: {}/{}/{}",
                 numPlanes, widths[0], heights[0], widths[1], heights[1], widths[2], heights[2],
                 videoFrame.linesize(0), videoFrame.linesize(1), videoFrame.linesize(2));
         }
         const int bytesMultiplier = (m_depth + 7) / 8;
         const GLenum dataType = (bytesMultiplier == 1) ? GL_UNSIGNED_BYTE : GL_UNSIGNED_SHORT;
-        // OpenGL 3.3 Core Profile 不支持 GL_LUMINANCE，使用 GL_RED/GL_R8 替代
-        const GLint internalFmt = (bytesMultiplier == 1) ? GL_R8 : GL_R16;
-        const GLenum fmt = GL_RED;
+
+        // NV12 格式的 UV 平面需要使用 GL_RG8 格式（双通道）
+        // YUV420P 格式使用 GL_R8 格式（单通道）
+        // 注意：NV12 有 2 个平面，YUV420P 有 3 个平面
 
         if (doReset)
         {
             // 简化设计：不再使用硬件互操作，直接使用软件帧路径
             const qint32 halfLinesize = (videoFrame.linesize(0) >> videoFrame.chromaShiftW());
-            // NV12 格式只有 2 个平面，linesize(2) 不存在，需要根据 numPlanes 判断
+
+            // NV12 格式的 UV 平面 linesize 计算说明：
+            // - Y 平面：linesize(0) = width（每像素 1 字节）
+            // - UV 平面：linesize(1) = width（每 UV 对 2 字节，但 linesize 以字节为单位）
+            // - halfLinesize = width / 2（以像素为单位的 UV 宽度）
+            // - NV12 的 UV 平面 linesize 应该等于 Y 的 linesize，因为每个 UV 对占 2 字节
+
             if (numPlanes >= 3) {
+                // YUV420P 格式：U 和 V 是独立的平面
                 correctLinesize =
                 (
                     (halfLinesize == videoFrame.linesize(1) && videoFrame.linesize(1) == videoFrame.linesize(2)) &&
                     (videoFrame.linesize(1) == halfLinesize)
                 );
             } else {
-                // NV12 格式：只有 2 个平面
-                correctLinesize = (halfLinesize == videoFrame.linesize(1));
+                // NV12 格式：UV 是交织的单平面
+                // NV12 的 UV 平面 linesize(1) 应该等于 Y 平面的 linesize(0)
+                // 因为每个 UV 对占 2 字节，对应 2 个水平像素
+                // 这意味着 correctLinesize 应该用不同的逻辑
+                // 对于 NV12，linesize 匹配，但宽度是 Y 的一半
+                correctLinesize = (videoFrame.linesize(0) == videoFrame.linesize(1));
             }
+
+            const bool isNV12 = (numPlanes == 2);
+
             for (qint32 p = 0; p < numPlanes && p < 3; ++p)
             {
-                const GLsizei w = correctLinesize ? videoFrame.linesize(p) / bytesMultiplier : widths[p];
+                // NV12 格式的 UV 平面纹理宽度 = widths[p]（像素宽度，已经是 Y 宽度的一半）
+                // 不应该用 linesize 来计算，因为 NV12 的 linesize 是字节宽度
+                const GLsizei w = widths[p];
                 const GLsizei h = heights[p];
                 if (p == 0)
                     m_textureSize = QSize(w, h);
+
+                // NV12 格式的 UV 平面（p == 1 且 numPlanes == 2）需要使用 GL_RG8 格式
+                // 因为 UV 是交织的双通道数据
+                const bool isNV12UV = isNV12 && (p == 1);
+                const GLint planeInternalFmt = isNV12UV ? GL_RG8 : GL_R8;
+                const GLenum planeFmt = isNV12UV ? GL_RG : GL_RED;
+                const int planeBytesPerPixel = isNV12UV ? 2 : 1;
+
                 if (hasPbo)
                 {
                     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo[p + 1]);
-                    glBufferData(GL_PIXEL_UNPACK_BUFFER, w * h * bytesMultiplier, nullptr, GL_DYNAMIC_DRAW);
+                    // NV12 UV 平面：w * h * 2 字节
+                    glBufferData(GL_PIXEL_UNPACK_BUFFER, w * h * planeBytesPerPixel, nullptr, GL_DYNAMIC_DRAW);
                 }
                 glBindTexture(GL_TEXTURE_2D, textures[p + 1]);
-                glTexImage2D(GL_TEXTURE_2D, 0, internalFmt, w, h, 0, fmt, dataType, nullptr);
+                glTexImage2D(GL_TEXTURE_2D, 0, planeInternalFmt, w, h, 0, planeFmt, GL_UNSIGNED_BYTE, nullptr);
+                // 设置纹理参数
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             }
-            texCoordYCbCr[2] = texCoordYCbCr[6] = (videoFrame.linesize(0) / bytesMultiplier == widths[0]) ? 1.0f : (widths[0] / (videoFrame.linesize(0) / bytesMultiplier + 1.0f));
+            texCoordYCbCr[2] = texCoordYCbCr[6] = (videoFrame.linesize(0) == widths[0]) ? 1.0f : (widths[0] / (videoFrame.linesize(0) + 1.0f));
             resetDone = true;
             hasImage = false;
         }
 
         // 上传纹理数据（简化设计：不再使用硬件互操作）
         {
+            const bool isNV12 = (numPlanes == 2);
+
             for (qint32 p = 0; p < numPlanes && p < 3; ++p)
             {
                 const quint8 *data = videoFrame.constData(p);
-                const GLsizei w = correctLinesize ? videoFrame.linesize(p) / bytesMultiplier : widths[p];
+                // NV12 的 UV 平面纹理宽度 = widths[p]（像素宽度）
+                // NV12 的 UV 平面 linesize = widths[0]（字节宽度，因为每个 UV 对占 2 字节）
+                const GLsizei texWidth = widths[p];
                 const GLsizei h = heights[p];
+
+                // NV12 格式的 UV 平面（p == 1 且 numPlanes == 2）需要使用 GL_RG 格式
+                const bool isNV12UV = isNV12 && (p == 1);
+                const GLenum planeFmt = isNV12UV ? GL_RG : GL_RED;
+                const int planeBytesPerPixel = isNV12UV ? 2 : 1;
+
+                // 计算源数据的行宽度（字节）
+                // 对于 NV12 UV 平面，linesize(1) 是字节宽度（= Y 宽度），但纹理宽度是 Y 宽度的一半
+                const GLsizei srcLineSize = videoFrame.linesize(p);
+                const GLsizei dstLineSize = texWidth * planeBytesPerPixel;
+
                 if (hasPbo)
                 {
                     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo[p + 1]);
                     quint8 *dst = nullptr;
                     // 简化设计：假设支持 mapBufferRange
                     if (true)  // 总是使用 mapBufferRange
-                        dst = (quint8 *)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, w * h * bytesMultiplier, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+                        dst = (quint8 *)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, texWidth * h * planeBytesPerPixel, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
 #if !defined(QT_OPENGL_ES_2) && !defined(QT_FEATURE_opengles2)
                     else
                         dst = (quint8 *)m_gl15.glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
@@ -503,13 +549,22 @@ void StereoOpenGLCommon::paintGLStereo()
                         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                     else
                     {
-                        if (correctLinesize)
-                            memcpy(dst, data, w * h * bytesMultiplier);
-                        else for (int y = 0; y < h; ++y)
+                        // 检查是否需要逐行复制
+                        // NV12 UV 平面：srcLineSize = Y_width, dstLineSize = UV_width * 2 = Y_width / 2 * 2 = Y_width
+                        // 所以 NV12 UV 平面的 srcLineSize == dstLineSize，可以一次性复制
+                        if (srcLineSize == dstLineSize)
                         {
-                            memcpy(dst, data, w * bytesMultiplier);
-                            data += videoFrame.linesize(p);
-                            dst  += w * bytesMultiplier;
+                            memcpy(dst, data, dstLineSize * h);
+                        }
+                        else
+                        {
+                            // 逐行复制
+                            for (int y = 0; y < h; ++y)
+                            {
+                                memcpy(dst, data, dstLineSize);
+                                data += srcLineSize;
+                                dst  += dstLineSize;
+                            }
                         }
                         glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
                         data = nullptr;
@@ -517,12 +572,23 @@ void StereoOpenGLCommon::paintGLStereo()
                 }
                 glActiveTexture(GL_TEXTURE0 + p);
                 glBindTexture(GL_TEXTURE_2D, textures[p + 1]);
-                if (hasPbo || correctLinesize)
-                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, fmt, dataType, data);
-                else for (int y = 0; y < h; ++y)
+                if (hasPbo)
+                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texWidth, h, planeFmt, GL_UNSIGNED_BYTE, data);
+                else
                 {
-                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, w, 1, fmt, dataType, data);
-                    data += videoFrame.linesize(p);
+                    // 无 PBO 时，需要检查是否逐行复制
+                    if (srcLineSize == dstLineSize)
+                    {
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texWidth, h, planeFmt, GL_UNSIGNED_BYTE, data);
+                    }
+                    else
+                    {
+                        for (int y = 0; y < h; ++y)
+                        {
+                            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, texWidth, 1, planeFmt, GL_UNSIGNED_BYTE, data);
+                            data += srcLineSize;
+                        }
+                    }
                 }
             }
             if (hasPbo)
@@ -533,6 +599,10 @@ void StereoOpenGLCommon::paintGLStereo()
         // 对于硬件解码，如果不是 copy 模式，数据已经在 GPU 上，可以清除 CPU 端的数据
         // 对于软件解码，数据已经上传到纹理，可以清除
         // 简化设计：总是清除帧数据（已上传到纹理）
+
+        // 在清除帧之前保存帧高度（用于颜色空间猜测）
+        m_lastFrameHeight = videoFrame.isEmpty() ? 0 : videoFrame.height(0);
+
         if (true)
         {
             videoFrame.clear();
@@ -739,8 +809,22 @@ void StereoOpenGLCommon::setStereoShaderUniforms()
     // 设置颜色空间转换 uniform（YUV 到 RGB）
     if (videoFormat != 0) {
         // YUV 到 RGB 转换矩阵
-        const QMatrix3x3 mat = Functions::getYUVtoRGBmatrix(m_colorSpace);
+        // 使用保存的帧高度（在清除帧之前保存），用于在颜色空间未指定时根据分辨率猜测正确的颜色空间
+        const int frameHeight = m_lastFrameHeight;
+        const QMatrix3x3 mat = Functions::getYUVtoRGBmatrix(m_colorSpace, frameHeight);
         shaderProgramStereo->setUniformValue("uYUVtRGB", mat);
+
+        // 调试日志：每10帧记录一次颜色空间选择
+        static int colorSpaceLogCounter = 0;
+        colorSpaceLogCounter++;
+        if (logger && colorSpaceLogCounter % 10 == 0) {
+            const char* guessedSpace = m_colorSpace == AVCOL_SPC_UNSPECIFIED ?
+                (frameHeight > 0 && frameHeight <= 576 ? "BT.601 (guessed from SD)" :
+                 (frameHeight >= 2160 ? "BT.2020 (guessed from UHD)" : "BT.709 (guessed from HD)")) :
+                "specified";
+            logger->info("StereoOpenGLCommon::setStereoShaderUniforms: Color space: {} (source={}), frameHeight={}",
+                        static_cast<int>(m_colorSpace), guessedSpace, frameHeight);
+        }
     }
 
     // 检查 uniform 设置是否成功（用于调试，每100次检查一次）

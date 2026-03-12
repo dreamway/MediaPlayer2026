@@ -437,11 +437,12 @@ docs/ 下的 63 个文档与本登记表的对应关系：
 | 属性 | 描述 |
 |------|------|
 | **现象** | 硬件解码或软件解码时视频色彩不正确（偏色） |
-| **根因分析** | `fragment.glsl` 硬编码了 BT.601 YUV 到 RGB 转换矩阵，但现代视频通常使用 BT.709 色彩空间 |
-| **修复方向** | 需要修改 `fragment.glsl` 使用动态色彩空间矩阵，根据视频的 `colorSpace` 属性自动选择正确的转换矩阵 |
-| **相关文件** | `WZMediaPlay/Shader/fragment.glsl`, `WZMediaPlay/videoDecoder/opengl/Functions.cpp` |
+| **根因分析** | `fragment.glsl` 使用 `uYUVtRGB` uniform，但 `StereoOpenGLCommon.cpp` 未设置该 uniform，导致黑屏 |
+| **修复方案** | 在 `StereoOpenGLCommon.cpp` 中添加 `uYUVtRGB` uniform 设置，使用 `Functions::getYUVtoRGBmatrix(m_colorSpace)` |
+| **相关文件** | `WZMediaPlay/Shader/fragment.glsl`, `WZMediaPlay/videoDecoder/opengl/StereoOpenGLCommon.cpp` |
 | **优先级** | P2 - 中 |
-| **状态** | ⚠️ 待修复 |
+| **状态** | ✅ 已修复（2026-03-12） |
+| **验证** | 全面 BUG 验证测试通过（10/10），SMPTE 色彩测试截图正常 |
 
 ---
 
@@ -475,7 +476,8 @@ docs/ 下的 63 个文档与本登记表的对应关系：
 ### 总结
 
 - **已验证 BUG**: 10 项，全部通过
-- **待修复 BUG**: BUG-007（色彩问题）、BUG-009、BUG-010、BUG-011、BUG-012
+- **新增修复**: BUG-007（色彩问题）- 已修复 StereoOpenGLCommon 中缺失的 uYUVtRGB uniform 设置
+- **待修复 BUG**: BUG-008、BUG-009、BUG-010、BUG-011、BUG-012
 
 ---
 
@@ -487,14 +489,13 @@ docs/ 下的 63 个文档与本登记表的对应关系：
 |------|------|
 | P0 致命 | 5 (BUG-018, BUG-029, BUG-030, BUG-031, 线程系列) |
 | P1 高 | 11 (BUG-006, BUG-019~025, BUG-027~028) |
-| P2 中 | 1 (BUG-008) |
-| **总计** | **17** |
+| P2 中 | 2 (BUG-007, BUG-008) |
+| **总计** | **18** |
 
 ### 待修复问题
 
 | 编号 | 描述 | 优先级 |
 |------|------|--------|
-| BUG-007 | 视频色彩错误 | P2 |
 | BUG-008 | FPS 过低 | P2 |
 | BUG-009 | 摄像头功能 | P2 |
 | BUG-010 | 3D 切换无效 | P2 |

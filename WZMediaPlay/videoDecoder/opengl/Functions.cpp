@@ -6,15 +6,15 @@
 #include <libavutil/pixfmt.h>
 #include <QMatrix4x4>
 
-QMatrix3x3 Functions::getYUVtoRGBmatrix(AVColorSpace colorSpace)
+QMatrix3x3 Functions::getYUVtoRGBmatrix(AVColorSpace colorSpace, int frameHeight)
 {
     // 参考QMPlayer2的实现，使用正确的YUV到RGB转换矩阵
     // QMPlayer2使用QMatrix4x4，我们使用QMatrix3x3（只取前3x3部分）
-    
+
     // 根据颜色空间获取RGB系数
     float cR = 0.299f;  // BT.601默认值
     float cB = 0.114f;  // BT.601默认值
-    
+
     switch (colorSpace) {
         case AVCOL_SPC_BT709:
             cR = 0.2126f;
@@ -36,9 +36,23 @@ QMatrix3x3 Functions::getYUVtoRGBmatrix(AVColorSpace colorSpace)
             break;
         case AVCOL_SPC_UNSPECIFIED:
         default:
-            // 默认使用BT.709（现代视频通常使用BT.709）
-            cR = 0.2126f;
-            cB = 0.0722f;
+            // 当颜色空间未指定时，根据视频分辨率猜测：
+            // - SD 视频（<= 576p）使用 BT.601
+            // - HD 视频（>= 720p）使用 BT.709
+            // - UHD 视频（>= 2160p）使用 BT.2020
+            if (frameHeight > 0 && frameHeight <= 576) {
+                // SD 视频：使用 BT.601
+                cR = 0.299f;
+                cB = 0.114f;
+            } else if (frameHeight >= 2160) {
+                // UHD 视频：使用 BT.2020
+                cR = 0.2627f;
+                cB = 0.0593f;
+            } else {
+                // HD 视频或未知：使用 BT.709（默认）
+                cR = 0.2126f;
+                cB = 0.0722f;
+            }
             break;
     }
     

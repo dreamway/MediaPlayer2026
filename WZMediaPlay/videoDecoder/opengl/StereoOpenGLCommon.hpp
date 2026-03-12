@@ -132,4 +132,7 @@ private:
 
     // 全屏Plus模式（拉伸显示）
     bool m_fullscreenPlusStretch = false;
+
+    // 保存的帧高度（在清除帧之前保存，用于颜色空间猜测）
+    int m_lastFrameHeight = 0;
 };
