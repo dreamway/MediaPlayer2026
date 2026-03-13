@@ -412,3 +412,163 @@ class AXElementHelper:
         if not self.window_element:
             return None
         return self.window_element.find_child_by_title(title)
+
+    def get_progress_value(self) -> float:
+        """
+        获取播放进度条值（百分比）。
+
+        Returns:
+            float: 进度百分比 (0-100)，如果无法获取则返回 None
+        """
+        if not self.window_element:
+            return None
+
+        # 查找进度滑块
+        sliders = self.window_element.find_all_by_role('AXSlider')
+        found_sliders = []
+        for slider in sliders:
+            max_val = slider.get_max_value()
+            current_val = slider.get_numeric_value()
+            found_sliders.append((max_val, current_val))
+            # 进度滑块通常有较大的最大值（视频时长秒数，通常 > 60）
+            # 音量滑块最大值通常是 100 或更小
+            if max_val > 60:  # 假设进度滑块最大值大于60秒
+                if max_val > 0:
+                    return (current_val / max_val) * 100
+
+        # 如果没有找到合适的滑块，打印调试信息
+        # print(f"  [DEBUG] Found sliders: {found_sliders}")
+        return None
+
+    def get_progress_seconds(self) -> float:
+        """
+        获取当前播放位置（秒）。
+
+        Returns:
+            float: 当前播放秒数，如果无法获取则返回 None
+        """
+        if not self.window_element:
+            return None
+
+        sliders = self.window_element.find_all_by_role('AXSlider')
+        for slider in sliders:
+            max_val = slider.get_max_value()
+            if max_val > 60:
+                return slider.get_numeric_value()
+        return None
+
+    def is_play_button_checked(self) -> bool:
+        """
+        检查播放按钮是否处于播放状态。
+
+        Returns:
+            bool: True 如果正在播放
+        """
+        if not self.window_element:
+            return False
+
+        # 查找播放/暂停按钮
+        buttons = self.window_element.find_all_by_role('AXButton')
+        for btn in buttons:
+            title = btn.get_title()
+            if title and ('播放' in title or '暂停' in title or 'Play' in title or 'Pause' in title):
+                # 尝试获取按钮的 value 属性（checked 状态）
+                value = btn.get_value()
+                # 对于 checkable 按钮，value 通常表示 checked 状态
+                if value and value.lower() in ['1', 'true', 'checked']:
+                    return True
+                # 如果无法获取 value，尝试根据标题判断
+                if title and ('暂停' in title or 'Pause' in title):
+                    return True
+                if title and ('播放' in title or 'Play' in title):
+                    return False
+        return False
+
+    def get_stereo_output_format(self) -> int:
+        """
+        获取当前 3D 输出格式。
+
+        Returns:
+            int: 输出格式值（0=VERTICAL, 1=HORIZONTAL, 2=CHESS, 3=ONLY_LEFT），如果无法获取则返回 None
+        """
+        if not self.window_element:
+            return None
+
+        # 尝试从静态文本中解析
+        texts = self.window_element.find_all_by_role('AXStaticText')
+        for text in texts:
+            value = text.get_value()
+            if value:
+                if 'ONLY_LEFT' in value or 'OnlyLeft' in value or 'only_left' in value or '仅左眼' in value:
+                    return 3  # STEREO_OUTPUT_FORMAT_ONLY_LEFT
+                if 'VERTICAL' in value or 'Vertical' in value or 'vertical' in value or '垂直' in value:
+                    return 0  # STEREO_OUTPUT_FORMAT_VERTICAL
+                if 'HORIZONTAL' in value or 'Horizontal' in value or 'horizontal' in value or '水平' in value:
+                    return 1  # STEREO_OUTPUT_FORMAT_HORIZONTAL
+                if 'CHESS' in value or 'Chess' in value or 'chess' in value or '棋盘' in value:
+                    return 2  # STEREO_OUTPUT_FORMAT_CHESS
+        return None
+
+    def get_fullscreen_tip(self) -> str:
+        """
+        获取全屏提示文本。
+
+        Returns:
+            str: 全屏提示文本，如果无法获取则返回 None
+        """
+        if not self.window_element:
+            return None
+
+        texts = self.window_element.find_all_by_role('AXStaticText')
+        for text in texts:
+            value = text.get_value()
+            if value and ('Fullscreen' in value or '全屏' in value):
+                return value
+        return None
+
+    def get_current_time_label(self) -> str:
+        """
+        获取当前时间标签文本。
+
+        Returns:
+            str: 当前时间（如 "00:01:23"），如果无法获取则返回 None
+        """
+        if not self.window_element:
+            return None
+
+        texts = self.window_element.find_all_by_role('AXStaticText')
+        for text in texts:
+            value = text.get_value()
+            if value and ':' in value:
+                # 时间格式通常是 HH:MM:SS 或 MM:SS
+                parts = value.split(':')
+                if len(parts) >= 2:
+                    try:
+                        # 尝试解析为时间
+                        for part in parts:
+                            int(part.strip())
+                        return value
+                    except ValueError:
+                        continue
+        return None
+
+    def get_total_time_label(self) -> str:
+        """
+        获取总时间标签文本。
+
+        Returns:
+            str: 总时间（如 "00:05:00"），如果无法获取则返回 None
+        """
+        if not self.window_element:
+            return None
+
+        # 通常总时间标签会显示在进度条后面，格式为 /HH:MM:SS 或类似
+        texts = self.window_element.find_all_by_role('AXStaticText')
+        for text in texts:
+            value = text.get_value()
+            if value and '/' in value:
+                # 格式可能是 "00:01:23/00:05:00"
+                parts = value.split('/')
+                if len(parts) == 2:
+                    return parts[1].strip()
+        return None
