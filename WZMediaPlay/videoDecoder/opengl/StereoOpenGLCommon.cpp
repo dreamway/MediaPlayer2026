@@ -409,8 +409,11 @@ void StereoOpenGLCommon::paintGLStereo()
     // 无新帧且从未渲染过才返回；无新帧但 hasImage 时继续用已有纹理绘制，避免黑屏闪烁（BUG 6）
     if (frameIsEmpty && !hasImage)
     {
+        // BUG-034 修复：在返回前清除 OpenGL 缓冲区，避免旧帧残留在背景中
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
         if (logger && paintGLStereoCounter % 100 == 0) {
-            logger->debug("StereoOpenGLCommon::paintGLStereo: Early return - frameIsEmpty: {}, hasImage: {}", frameIsEmpty, hasImage);
+            logger->debug("StereoOpenGLCommon::paintGLStereo: Early return - frameIsEmpty: {}, hasImage: {}, cleared buffer", frameIsEmpty, hasImage);
         }
         return;
     }
