@@ -175,6 +175,20 @@ void StereoOpenGLRenderer::setStereoEnableRegion(bool enable, float topLeftX, fl
     }
 }
 
+void StereoOpenGLRenderer::setFullscreenPlusStretch(bool stretch)
+{
+    // BUG-037 修复：设置全屏拉伸模式
+    auto *stereoDrawable = getStereoDrawable();
+    if (stereoDrawable) {
+        stereoDrawable->setFullscreenPlusStretch(stretch);
+        stereoDrawable->updateGL(false);
+    }
+
+    if (logger) {
+        logger->info("StereoOpenGLRenderer::setFullscreenPlusStretch: stretch={}", stretch);
+    }
+}
+
 bool StereoOpenGLRenderer::initializeStereoGL()
 {
     auto *stereoDrawable = getStereoDrawable();

@@ -30,6 +30,9 @@ public:
     void setParallaxShift(int shift);
     void setStereoEnableRegion(bool enable, float topLeftX, float topLeftY, float bottomRightX, float bottomRightY);
 
+    // BUG-037 修复：全屏模式设置
+    void setFullscreenPlusStretch(bool stretch);
+
     // 获取当前 3D 参数
     StereoFormat getStereoFormat() const { return stereoFormat_; }
     StereoInputFormat getStereoInputFormat() const { return stereoInputFormat_; }

@@ -122,6 +122,9 @@ public:
     void setUseDefault2DShader(bool use);
     bool isUsingDefault2DShader() const;
 
+    // 进度条位置跟踪重置（BUG-038 修复）
+    void resetPositionTracking();
+
 
 
     // UI 组件访问（与 FFmpegView 兼容）
@@ -216,4 +219,7 @@ private:
 
     // 视频布局（用于管理OpenGL widget）
     QVBoxLayout *videoLayout_ = nullptr;
+
+    // 进度条位置跟踪（BUG-038 修复：避免使用 static 变量）
+    int64_t lastPositionSeconds_ = -1;
 };

@@ -11,22 +11,29 @@
 
 | 状态 | 数量 |
 |------|------|
-| ✅ 已修复且已验证 | 28 |
+| ✅ 已修复且已验证 | 29 |
+| ✅ 已修复待验证 | 5 |
+| ✅ 不是 BUG（代码已正确实现） | 0 |
 | 📋 已知问题（低优先级） | 1 |
-| 🐛 待修复 | 6 |
 
 ---
 
 ## 🐛 待修复的 BUG
 
-| 编号 | 描述 | 优先级 | 状态 |
-|------|------|--------|------|
-| BUG-033 | DrawWidget 底图应显示 3D_ONLY_LEFT 模式 | P2 | 待修复 |
-| BUG-034 | SplashLogo 背景残影未清除 | P2 | 待修复 |
-| BUG-035 | 手动打开视频时 SplashLogo 未隐藏、进度条不更新 | P1 | 待修复 |
-| BUG-036 | 连续切换 play/pause 后声音丢失、进度条错乱 | P1 | 待修复 |
-| BUG-037 | 全屏/全屏+ 功能未区分 | P2 | 待修复 |
-| BUG-038 | 播放列表循环时进度条跳到中间、音视频不同步 | P1 | 待修复 |
+(无)
+
+---
+
+## ✅ 已修复待验证的 BUG
+
+| 编号 | 描述 | 优先级 | 状态 | 修复日期 |
+|------|------|--------|------|---------|
+| BUG-033 | DrawWidget 启用时 ONLY_LEFT 模式未立即生效 | P2 | ✅ 已修复待验证 | 2026-03-13 |
+| BUG-034 | SplashLogo 背景残影未清除 | P2 | ✅ 已修复待验证 | 2026-03-13 |
+| BUG-035 | 手动双击播放列表时 Logo 未隐藏 | P1 | ✅ 已修复且已验证 | 2026-03-13 |
+| BUG-036 | 连续切换 play/pause 后声音丢失、进度条错乱 | P1 | ✅ 已修复待验证 | 2026-03-13 |
+| BUG-037 | 全屏/全屏+ 功能未区分 | P2 | ✅ 已修复待验证 | 2026-03-13 |
+| BUG-038 | 播放列表循环时进度条跳到中间、音视频不同步 | P1 | ✅ 已修复待验证 | 2026-03-13 |
 
 ---
 
@@ -34,63 +41,69 @@
 
 | 属性 | 描述 |
 |------|------|
-| **现象** | DrawWidget 启用时，底图应显示 3D 模式下的 ONLY_LEFT 模式，方便用户在左眼画面上进行 ROI 选择 |
-| **当前行为** | 底图显示的不是 ONLY_LEFT 模式 |
-| **预期行为** | DrawWidget 启用时自动切换到 3D_ONLY_LEFT 模式显示 |
-| **测试结果** | ⚠ 无法通过 Accessibility API 验证，需要人工验证 |
-| **代码分析** | 代码在 `on_action_3D_region_toggled` 中已正确设置 `STEREO_OUTPUT_FORMAT_ONLY_LEFT` |
+| **现象** | DrawWidget 启用时，底图应显示 3D 模式下的 ONLY_LEFT 模式，方便用户在左眼画面上进行 ROI 选择，但切换后画面未更新 |
+| **根因** | `SetStereoOutputFormat(ONLY_LEFT)` 调用后，`updateGL()` 可能因为 widget 不可见或无帧数据而直接返回，不触发重绘 |
+| **修复内容** | 在 `on_action_3D_region_toggled` 中设置输出格式后调用 `repaint()` 强制同步重绘，确保 ONLY_LEFT 模式立即生效 |
+| **修复文件** | `WZMediaPlay/MainWindow.cpp` |
 | **优先级** | P2 |
-| **状态** | 🐛 待验证 |
+| **状态** | ✅ 已修复待验证 |
 
 ### BUG-034: SplashLogo 背景残影问题
 
 | 属性 | 描述 |
 |------|------|
 | **现象** | 视频播放结束或停止时，SplashLogo 显示时有背景残影，画面不干净 |
-| **根因分析** | 可能是 OpenGL 缓冲区未正确清除，需要在显示 SplashLogo 前调用 glClear |
-| **预期行为** | SplashLogo 显示时背景应完全清除，无残影 |
-| **测试结果** | ⚠ Logo 未显示或无法通过 Accessibility API 确认 |
+| **根因** | `StopRendering()` 中 Logo 显示在视频缓冲区清除之前，导致旧帧残留在 Logo 背景中 |
+| **修复内容** | 重构 `StopRendering()` 逻辑：先清除视频渲染器，再调用 `repaint()` 强制重绘，最后显示 Logo |
+| **修复文件** | `WZMediaPlay/StereoVideoWidget.cpp` |
 | **优先级** | P2 |
-| **状态** | 🐛 待验证 |
+| **状态** | ✅ 已修复待验证 |
 
 ### BUG-035: 手动打开视频时 SplashLogo 未隐藏、进度条不更新
 
 | 属性 | 描述 |
 |------|------|
-| **现象** | 通过 Cmd+O 手动打开视频时：1) SplashLogo 未隐藏；2) 进度条不更新 |
-| **测试结果** | ✓ 通过 - Logo 已隐藏，进度条在更新 |
+| **现象** | 程序启动后手动在播放列表中双击播放视频时：1) SplashLogo (mWindowLogo) 未隐藏；2) 进度条不更新 |
+| **根因** | `StartRendering()` 中调用 `mWindowLogo->hide()` 后没有强制重绘，Logo 可能在 z-order 上仍位于顶层 |
+| **修复内容** | 在 `StartRendering()` 中：1) 调用 `hide()` + `lower()` + `clearFocus()` 确保 Logo 完全隐藏；2) 调用 `repaint()` 强制立即重绘 |
+| **修复文件** | `WZMediaPlay/StereoVideoWidget.cpp` |
+| **测试结果** | ✓ 自动化测试通过 (test_bug_035_manual.py) |
 | **优先级** | P1 |
-| **状态** | ✅ 不是 BUG（代码已正确处理） |
+| **状态** | ✅ 已修复且已验证 |
 
 ### BUG-036: 连续切换 play/pause 后声音丢失、进度条错乱
 
 | 属性 | 描述 |
 |------|------|
 | **现象** | 连续多次按空格键切换播放/暂停后，音频停止播放，进度条显示异常 |
-| **测试结果** | 视频在播放（进度条更新），但快速切换后状态可能混乱 |
+| **根因** | `handlePausedState()` 只等待 10ms 但不实际暂停/恢复 OpenAL 音频源，导致快速切换时音频源状态混乱 |
+| **修复内容** | 修改 `handlePausedState()` 在进入暂停时调用 `audio_->pause()`，恢复时调用 `audio_->play()` |
+| **修复文件** | `WZMediaPlay/videoDecoder/AudioThread.cpp` |
 | **优先级** | P1 |
-| **状态** | 🐛 部分验证（需要人工确认音频状态） |
+| **状态** | ✅ 已修复待验证 |
 
 ### BUG-037: 全屏/全屏+ 功能未区分
 
 | 属性 | 描述 |
 |------|------|
 | **现象** | 全屏模式和全屏+模式功能相同，未做区分 |
-| **当前行为** | 两种全屏模式效果一样 |
-| **预期行为** | 全屏+模式应该隐藏更多 UI 元素（如进度条、控制按钮） |
-| **测试结果** | ⚠ 无法通过 Accessibility API 获取全屏提示 |
+| **根因** | `SetFullscreenMode()` 只设置了提示文本，未实际调用渲染器的拉伸模式 |
+| **修复内容** | 1. 在 `StereoOpenGLRenderer` 中添加 `setFullscreenPlusStretch()` 方法<br>2. 在 `SetFullscreenMode()` 中调用该方法设置渲染器的拉伸模式 |
+| **修复文件** | `WZMediaPlay/StereoVideoWidget.cpp`, `WZMediaPlay/videoDecoder/opengl/StereoOpenGLRenderer.h`, `WZMediaPlay/videoDecoder/opengl/StereoOpenGLRenderer.cpp` |
+| **预期行为** | 全屏模式保持视频宽高比，全屏+模式拉伸视频填满屏幕 |
 | **优先级** | P2 |
-| **状态** | 🐛 待验证 |
+| **状态** | ✅ 已修复待验证 |
 
 ### BUG-038: 播放列表循环时进度条跳到中间、音视频不同步
 
 | 属性 | 描述 |
 |------|------|
 | **现象** | 播放列表循环播放时，新视频开始后进度条跳到中间位置，音视频不同步 |
-| **测试结果** | 切换视频后进度条在 50%，而不是从 0 开始 |
-| **根因分析** | 可能是进度条在 openPath 中重置后又被其他逻辑更新 |
+| **根因** | `OnUpdateStatusTimer()` 中使用 `static int64_t lastPositionSeconds = -1` 记录位置，该变量在视频切换时未重置，导致新视频的位置信号被旧值干扰 |
+| **修复内容** | 1. 将 `static int64_t lastPositionSeconds` 改为成员变量 `lastPositionSeconds_`<br>2. 添加 `resetPositionTracking()` 方法重置位置跟踪<br>3. 在 `onPlaybackStateChanged(Playing)` 中调用重置方法 |
+| **修复文件** | `WZMediaPlay/StereoVideoWidget.h`, `WZMediaPlay/StereoVideoWidget.cpp` |
 | **优先级** | P1 |
-| **状态** | 🐛 待修复 |
+| **状态** | ✅ 已修复待验证 |
 
 ---
 
@@ -227,8 +240,32 @@
 | 项目 | 值 |
 |------|-----|
 | **测试框架** | `testing/pyobjc/run_all_tests.py` |
-| **测试结果** | 18/18 通过 |
+| **测试结果** | 8/10 通过 |
 | **测试内容** | 应用启动、渲染验证、Seeking、音视频同步、3D渲染、播放进度与UI同步 |
+
+### TestRound 13: BUG-033~038 验证测试（2026-03-13）
+
+| 项目 | 值 |
+|------|-----|
+| **测试框架** | `testing/pyobjc/tests/test_new_bugs.py` |
+| **测试结果** | 2 通过, 4 待人工确认 |
+| **测试详情** | BUG-035, BUG-036 自动化测试通过；BUG-033, BUG-034, BUG-037, BUG-038 需人工确认 |
+
+### TestRound 14: BUG-035 专门测试（2026-03-13）
+
+| 项目 | 值 |
+|------|-----|
+| **测试框架** | `testing/pyobjc/tests/test_bug_035_manual.py` |
+| **测试结果** | 2/2 通过 |
+| **测试详情** | 对比测试（带视频启动）和主测试（播放列表双击）均通过 |
+
+### TestRound 15: GUI E2E 测试（2026-03-13）
+
+| 项目 | 值 |
+|------|-----|
+| **测试框架** | `testing/pyobjc/tests/test_gui_e2e.py` |
+| **测试结果** | 10/10 通过 |
+| **测试内容** | PlayButton同步、局部3D、视差调节、截图、全屏、音量、3D格式、Seek、播放列表、稳定性 |
 
 ---
 

@@ -105,11 +105,33 @@ void AudioThread::handleFlushAudio()
 
 void AudioThread::handlePausedState()
 {
-    if (controller_ && controller_->isPaused()) {
+    // BUG-036 修复：正确处理暂停状态，暂停/恢复 OpenAL 音频源
+    static bool wasPaused = false;
+    bool isPaused = controller_ && controller_->isPaused();
+
+    if (isPaused) {
+        // 进入暂停状态时，暂停 OpenAL 音频源
+        if (!wasPaused && audio_) {
+            audio_->pause();
+            if (logger) {
+                logger->debug("AudioThread::handlePausedState: OpenAL source paused");
+            }
+        }
+        // 等待恢复
         for (int i = 0; i < 10 && !br_; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
+    } else if (wasPaused && !isPaused) {
+        // 从暂停恢复时，重新启动 OpenAL 音频源
+        if (audio_) {
+            audio_->play();
+            if (logger) {
+                logger->debug("AudioThread::handlePausedState: OpenAL source resumed");
+            }
+        }
     }
+
+    wasPaused = isPaused;
 }
 
 bool AudioThread::handleSeekingState()

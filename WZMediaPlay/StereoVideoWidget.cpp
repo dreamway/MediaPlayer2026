@@ -509,13 +509,22 @@ int StereoVideoWidget::StartRendering(StereoFormat stereoFormat, StereoInputForm
     }
 
     isRendering_ = true;
+
+    // BUG-035 修复：确保 Logo 被正确隐藏
+    // 使用 hide() + lower() + clearFocus() 确保 Logo 完全隐藏且不在顶层
     if (mWindowLogo) {
         mWindowLogo->hide();
+        mWindowLogo->lower();  // 确保在 z-order 最底层
+        mWindowLogo->clearFocus();
     }
+
+    // BUG-035 修复：触发立即重绘，确保 Logo 隐藏生效
+    // 使用 repaint() 而不是 update() 来强制同步重绘
+    repaint();
 
     if (logger) {
         logger->info(
-            "StereoVideoWidget::StartRendering: Started with format {}, input {}, output {}",
+            "StereoVideoWidget::StartRendering: Started with format {}, input {}, output {}, logo hidden",
             int(stereoFormat),
             int(stereoInputFormat),
             int(stereoOutputFormat));
@@ -538,20 +547,24 @@ bool StereoVideoWidget::StopRendering()
     }
 
     isRendering_ = false;
+
+    // BUG-034 修复：先清空视频渲染器，确保 OpenGL 缓冲区被清除
+    // 避免旧帧残留在 Logo 背景中
+    if (videoRenderer_) {
+        videoRenderer_->clear();
+    }
+
+    // 触发立即重绘，确保 OpenGL 缓冲区被清空后再显示 Logo
+    // 使用 repaint() 而不是 update() 来强制立即重绘
+    repaint();
+
+    // 在缓冲区清除后显示 Logo
     if (mWindowLogo) {
         // 确保 Logo 在正确的位置并显示
         mWindowLogo->move((width() - mWindowLogo->width()) / 2, (height() - mWindowLogo->height()) / 2);
         mWindowLogo->raise();  // 确保 Logo 在顶层
         mWindowLogo->show();
     }
-
-    // 清空视频渲染器中的图像，避免旧帧残留
-    if (videoRenderer_) {
-        videoRenderer_->clear();
-    }
-
-    // 触发重绘，确保 Logo 显示
-    update();
 
     if (logger) {
         logger->info("StereoVideoWidget::StopRendering: Stopped, Logo visible={}", mWindowLogo ? mWindowLogo->isVisible() : false);
@@ -597,6 +610,13 @@ void StereoVideoWidget::SetPlayController(PlayController *controller)
 void StereoVideoWidget::SetFullscreenMode(FullscreenMode mode)
 {
     currentFullscreenMode_ = mode;
+
+    // BUG-037 修复：设置全屏模式时同时更新渲染器的拉伸模式
+    bool stretch = (mode == FULLSCREEN_PLUS_STRETCH);
+    auto *stereoRenderer = dynamic_cast<StereoOpenGLRenderer *>(videoRenderer_.get());
+    if (stereoRenderer) {
+        stereoRenderer->setFullscreenPlusStretch(stretch);
+    }
 
     // 设置全屏模式
     // 注意：实际的窗口全屏由 MainWindow 控制，这里只负责设置渲染模式
@@ -900,9 +920,8 @@ void StereoVideoWidget::OnUpdateStatusTimer()
     // 转换为秒（MainWindow::onUpdatePlayProcess 期望的是秒）
     int64_t currentPositionSeconds = currentPositionMs / 1000;
 
-    // 只在位置变化时发出信号，避免频繁更新
-    static int64_t lastPositionSeconds = -1;
-    if (currentPositionSeconds != lastPositionSeconds) {
+    // BUG-038 修复：使用成员变量替代 static 变量，避免视频切换时状态残留
+    if (currentPositionSeconds != lastPositionSeconds_) {
         if (logger) {
             logger->debug(
                 "StereoVideoWidget::OnUpdateStatusTimer: Emitting updatePlayProcess signal, position: {} seconds ({} ms)",
@@ -910,7 +929,7 @@ void StereoVideoWidget::OnUpdateStatusTimer()
                 currentPositionMs);
         }
         emit updatePlayProcess(currentPositionSeconds);
-        lastPositionSeconds = currentPositionSeconds;
+        lastPositionSeconds_ = currentPositionSeconds;
     }
 
     // 更新字幕位置（字幕使用毫秒）
@@ -921,6 +940,15 @@ void StereoVideoWidget::OnUpdateStatusTimer()
 
 void StereoVideoWidget::onPlaybackStateChanged(PlaybackState state)
 {
+    // BUG-038 修复：当播放状态变为 Playing 时，重置位置跟踪
+    // 这确保了当切换到新视频时，进度条位置从头开始
+    if (state == PlaybackState::Playing) {
+        resetPositionTracking();
+        if (logger) {
+            logger->debug("StereoVideoWidget::onPlaybackStateChanged: Reset position tracking for new playback");
+        }
+    }
+
     // 添加异常保护
     try {
         // 立即返回，避免处理状态变化时的复杂逻辑
@@ -958,6 +986,13 @@ void StereoVideoWidget::onPlaybackStateChanged(PlaybackState state)
             logger->error("StereoVideoWidget::onPlaybackStateChanged: Unknown exception");
         }
     }
+}
+
+void StereoVideoWidget::resetPositionTracking()
+{
+    // BUG-038 修复：重置进度条位置跟踪状态
+    // 当切换到新视频时调用，确保进度条从头开始
+    lastPositionSeconds_ = -1;
 }
 
 

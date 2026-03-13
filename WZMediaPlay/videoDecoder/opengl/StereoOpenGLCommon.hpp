@@ -46,7 +46,10 @@ public:
     void setStereoOutputFormat(StereoOutputFormat outputFormat);
     void setParallaxShift(int shift);
     void setStereoEnableRegion(bool enable, float topLeftX, float topLeftY, float bottomRightX, float bottomRightY);
-    
+
+    // BUG-037 修复：设置全屏Plus模式（拉伸显示）- 公开方法供外部调用
+    void setFullscreenPlusStretch(bool stretch) { m_fullscreenPlusStretch = stretch; }
+
     // 切换使用默认 2D Shader（用于调试对比）
     void setUseDefault2DShader(bool use) { m_useDefault2DShader = use; }
     bool isUsingDefault2DShader() const { return m_useDefault2DShader; }
@@ -64,9 +67,6 @@ protected:
     // 计算动态顶点坐标（参考v1.0.8 FFmpegView::programDraw）
     // 根据视频宽高比动态调整顶点，保持正确的显示比例
     void updateDynamicVertices(int frameWidth, int frameHeight);
-
-    // 设置全屏Plus模式（拉伸显示）
-    void setFullscreenPlusStretch(bool stretch) { m_fullscreenPlusStretch = stretch; }
 
     // 切换视差调节时的裁剪效果
     void toggleStripParallaxSideView() { m_enableStripParallaxSideView = !m_enableStripParallaxSideView; }

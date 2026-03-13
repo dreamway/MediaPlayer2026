@@ -4136,6 +4136,10 @@ void MainWindow::on_action_3D_region_toggled(bool region3d_checked)
         ui.playWidget->SetStereoFormat(STEREO_FORMAT_3D);
         ui.playWidget->SetStereoOutputFormat(STEREO_OUTPUT_FORMAT_ONLY_LEFT);
 
+        // BUG-033 修复：强制重绘，确保 ONLY_LEFT 模式立即生效
+        // 不依赖 updateGL() 的条件判断，直接调用 repaint() 强制同步重绘
+        ui.playWidget->repaint();
+
         mDrawWidget->resize(ui.playWidget->width(), ui.playWidget->height());
         mDrawWidget->move(0, 0);
         mDrawWidget->show();
@@ -4144,6 +4148,9 @@ void MainWindow::on_action_3D_region_toggled(bool region3d_checked)
         ui.playWidget->CancelStereoRegion();
         logger->info("leaving 3D region, restore backup outputFormat:{}", (int) mStereoOutputFormatWhenSwitchToRegion);
         ui.playWidget->SetStereoOutputFormat(mStereoOutputFormatWhenSwitchToRegion);
+
+        // BUG-033 修复：退出 3D region 时也强制重绘
+        ui.playWidget->repaint();
     }
 }
 
@@ -4357,6 +4364,9 @@ bool MainWindow::loadSubtitle(QString curMovieFilename, int seekPosInSeconds)
             }
         }
     }
+
+    // 默认返回 false（没有可用的字幕文件）
+    return false;
 }
 
 void MainWindow::onPrimaryScreenChanged(QScreen *screen)
