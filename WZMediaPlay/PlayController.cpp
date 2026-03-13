@@ -1257,11 +1257,11 @@ bool PlayController::seek(int64_t positionMs)
         std::chrono::duration_cast<milliseconds>(seekBasePts).count(),
         std::chrono::duration_cast<milliseconds>(seekBasePts).count());
 
-    // 6. 清空 VideoRenderer 中的图像（在锁定状态下，避免并发渲染）
-    if (videoRenderer_ && vLocked) {
-        videoRenderer_->clear();
-        SPDLOG_LOGGER_DEBUG(logger, "PlayController::seek: VideoRenderer image cleared (under lock)");
-    }
+    // 6. 注意：不再清空 VideoRenderer 中的图像
+    // 修复 BUG：快速 seeking 时黑画面问题
+    // 保留最后一帧，直到新帧解码完成后再替换，避免黑画面
+    // 视频帧缓存会在 VideoThread 解码新帧时自动更新
+    SPDLOG_LOGGER_DEBUG(logger, "PlayController::seek: Keeping last frame until new frame arrives (no clear)");
 
     // 7. 解锁线程（在 seek 请求前解锁，让线程可以继续运行并检查 flush 标志）
     // 解锁顺序与锁定顺序相反：先AudioThread，后VideoThread

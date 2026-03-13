@@ -858,8 +858,17 @@ void MainWindow::initUI()
         staList << QString(tr("3D立体")) << QString(tr("2D左视图")) << QString(tr("2D原视频"));
         ui.comboBox_src2D_3D2D->addItems(staList);
         connect(ui.comboBox_src2D_3D2D, &UpShowComboBox::currentIndexChanged, this, &MainWindow::on_comboBox_src2D_3D2D_currentIndexChanged);
-        // 默认设置为 2D 原视频模式（索引 2），便于调试基本渲染
-        ui.comboBox_src2D_3D2D->setCurrentIndex(2);
+        // 根据配置文件设置初始立体模式（修复 BUG：启动时 UI 状态与实际播放模式不一致）
+        // 索引映射：0=3D立体, 1=2D左视图, 2=2D原视频
+        int initialIndex = 2; // 默认 2D 原视频
+        if (mStereoFormat == StereoFormat::STEREO_FORMAT_3D) {
+            if (mStereoOutputFormat == StereoOutputFormat::STEREO_OUTPUT_FORMAT_ONLY_LEFT) {
+                initialIndex = 1; // 2D 左视图
+            } else {
+                initialIndex = 0; // 3D 立体
+            }
+        }
+        ui.comboBox_src2D_3D2D->setCurrentIndex(initialIndex);
         ui.comboBox_3D_input->setCurrentIndex(0);
     }
     //  input comboBox
@@ -1233,13 +1242,23 @@ int MainWindow::openPath(QString path, bool addPlayList)
 
     logger->info("start Actual Open file:{}", path.toUtf8().constData());
     currentElapsedInSeconds_ = 0;
-    
+
     // 切换到视频文件 Widget（如果当前在 Camera 模式）
     switchToVideoFile();
-    
+
+    // 关键修复：在 open() 之前启动渲染
+    // 这样可以确保：
+    // 1. isRendering_ = true，避免 resizeEvent 中 Logo 被错误显示
+    // 2. Logo 被隐藏，视频画面可以正常显示
+    // 注意：视频文件模式下 frameRate 参数只用于日志，实际渲染由 VideoThread 驱动
+    ui.playWidget->show();
+    ui.playWidget->StartRendering(mStereoFormat, mStereoInputFormat, mStereoOutputFormat, 0);
+
     bool openOk = playController_->open(path);
     if (!openOk) {
         logger->error("playController_->open failed");
+        // 打开失败时停止渲染
+        ui.playWidget->StopRendering();
         return -1;
     }
     mCurMovieFilename = path;
@@ -1435,14 +1454,8 @@ int MainWindow::openPath(QString path, bool addPlayList)
         updatePlayList(addList, GlobalDef::getInstance()->PLAY_LIST_DATA.playlist_current_index);
     }
 
-    // 暂时隐藏旧的 FFmpegView，避免冲突
-    // StereoVideoWidget 已经通过 setPlayController 连接到 PlayController
-    // 不需要额外的 test window，StereoVideoWidget 会直接显示视频
-    ui.playWidget->show();
-
-    // 启动渲染（只启动状态更新定时器，不启动 renderTimer_）
-    // 渲染由 VideoThread 通过 writeVideo() -> updateGL() 驱动，避免双重驱动冲突
-    ui.playWidget->StartRendering(mStereoFormat, mStereoInputFormat, mStereoOutputFormat, frameRate);
+    // 注意：StartRendering() 已经在 playController_->open() 之前调用了
+    // 这样可以确保视频画面能及时显示，避免 Logo 遮挡
 
     int seekPos = 0;
     loadSubtitle(mCurMovieFilename, seekPos);

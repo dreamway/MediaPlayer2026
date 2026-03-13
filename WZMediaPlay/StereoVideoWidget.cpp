@@ -432,12 +432,15 @@ void StereoVideoWidget::resizeEvent(QResizeEvent *e)
         mFullscreenTipsWidget->move(QPoint(0, 0));
     }
 
-    // mWindowLogo 位置：居中
+    // mWindowLogo 位置：居中（仅移动位置，不控制显示/隐藏）
+    // Logo 的显示/隐藏由 StartRendering()/StopRendering() 统一管理
+    // 修复：移除此处的 show() 调用，避免在视频切换过程中 Logo 被错误地显示
     // - X坐标：(窗口宽度 - Logo宽度) / 2
     // - Y坐标：(窗口高度 - Logo高度) / 2
-    if (!isRendering_ && mWindowLogo) {
+    if (mWindowLogo) {
         mWindowLogo->move((width() - mWindowLogo->width()) / 2, (height() - mWindowLogo->height()) / 2);
-        mWindowLogo->show();
+        // 注意：不要在这里调用 show()，Logo 的显示由 StopRendering() 控制
+        // 只有在非渲染状态下才显示 Logo（此时 Logo 应该已经被 StopRendering() 显示了）
     }
 
     // 确保OpenGL widget正确调整大小（布局会自动处理，但这里可以添加日志）
@@ -536,12 +539,22 @@ bool StereoVideoWidget::StopRendering()
 
     isRendering_ = false;
     if (mWindowLogo) {
+        // 确保 Logo 在正确的位置并显示
+        mWindowLogo->move((width() - mWindowLogo->width()) / 2, (height() - mWindowLogo->height()) / 2);
+        mWindowLogo->raise();  // 确保 Logo 在顶层
         mWindowLogo->show();
     }
- 
+
+    // 清空视频渲染器中的图像，避免旧帧残留
+    if (videoRenderer_) {
+        videoRenderer_->clear();
+    }
+
+    // 触发重绘，确保 Logo 显示
+    update();
 
     if (logger) {
-        logger->info("StereoVideoWidget::StopRendering: Stopped");
+        logger->info("StereoVideoWidget::StopRendering: Stopped, Logo visible={}", mWindowLogo ? mWindowLogo->isVisible() : false);
     }
 
     return true;

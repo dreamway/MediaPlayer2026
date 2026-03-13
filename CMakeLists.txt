@@ -221,7 +221,37 @@ if(WIN32)
         IMPORTED_LOCATION "${OPENAL_LIBRARY}"
     )
 else()
-    find_package(OpenAL REQUIRED)
+    # macOS: 优先使用 Homebrew 安装的 openal-soft
+    find_path(OPENAL_INCLUDE_DIR
+        NAMES AL/al.h
+        PATHS
+            /opt/homebrew/opt/openal-soft/include
+            /usr/local/opt/openal-soft/include
+            /opt/homebrew/include
+            /usr/local/include
+        NO_DEFAULT_PATH
+    )
+    find_library(OPENAL_LIBRARY
+        NAMES openal OpenAL
+        PATHS
+            /opt/homebrew/opt/openal-soft/lib
+            /usr/local/opt/openal-soft/lib
+            /opt/homebrew/lib
+            /usr/local/lib
+        NO_DEFAULT_PATH
+    )
+    if(OPENAL_INCLUDE_DIR AND OPENAL_LIBRARY)
+        message(STATUS "OpenAL (Homebrew) include: ${OPENAL_INCLUDE_DIR}")
+        message(STATUS "OpenAL (Homebrew) library: ${OPENAL_LIBRARY}")
+        add_library(OpenAL::OpenAL STATIC IMPORTED)
+        set_target_properties(OpenAL::OpenAL PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${OPENAL_INCLUDE_DIR}"
+            IMPORTED_LOCATION "${OPENAL_LIBRARY}"
+        )
+    else()
+        # Fallback to system OpenAL
+        find_package(OpenAL REQUIRED)
+    endif()
 endif()
 
 # GLEW
@@ -392,6 +422,14 @@ if(APPLE)
         "${WZMEDIA_SRC_DIR}/Resources"
         "$<TARGET_FILE_DIR:WZMediaPlayer>/../Resources"
         COMMENT "Copying Resources to app bundle"
+    )
+
+    # 拷贝 config 目录到 app bundle
+    add_custom_command(TARGET WZMediaPlayer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${WZMEDIA_SRC_DIR}/config"
+        "$<TARGET_FILE_DIR:WZMediaPlayer>/../config"
+        COMMENT "Copying config to app bundle"
     )
 endif()
 

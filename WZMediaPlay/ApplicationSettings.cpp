@@ -125,8 +125,19 @@ void ApplicationSettings::read_SplashLogoPath()
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     QVariant variant = setting.value("/MediaPlay/SplashLogoPath");
-    GlobalDef::getInstance()->SPLASH_LOGO_PATH = variant.isNull() ? QString(QCoreApplication::applicationDirPath() + "/Resources/logo/SPElg.png")
-                                                                  : variant.toString();
+    QString splashPath = variant.isNull() ? QString(QCoreApplication::applicationDirPath() + "/Resources/logo/SPElg.png")
+                                           : variant.toString();
+
+    // 修复：将相对路径转换为绝对路径
+    // 如果路径以 "./" 开头，则相对于应用程序目录
+    if (splashPath.startsWith("./")) {
+        splashPath = QCoreApplication::applicationDirPath() + "/" + splashPath.mid(2);
+    } else if (!splashPath.isEmpty() && !QDir::isAbsolutePath(splashPath)) {
+        // 如果不是绝对路径，则相对于应用程序目录
+        splashPath = QCoreApplication::applicationDirPath() + "/" + splashPath;
+    }
+
+    GlobalDef::getInstance()->SPLASH_LOGO_PATH = splashPath;
     variant = setting.value("/MediaPlay/SplashLogoWidth");
     GlobalDef::getInstance()->SPLASH_LOGO_WIDTH = variant.isNull() ? 100 : variant.toInt();
     variant = setting.value("/MediaPlay/SplashLogoHeight");
