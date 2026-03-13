@@ -30,21 +30,21 @@ find_package(Qt6 REQUIRED COMPONENTS
     Multimedia MultimediaWidgets ShaderTools LinguistTools
 )
 
-# FFmpeg via pkg-config
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(AVCODEC REQUIRED libavcodec)
-pkg_check_modules(AVFORMAT REQUIRED libavformat)
-pkg_check_modules(AVUTIL REQUIRED libavutil)
-pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
-pkg_check_modules(SWSCALE REQUIRED libswscale)
-pkg_check_modules(AVFILTER REQUIRED libavfilter)
-pkg_check_modules(AVDEVICE REQUIRED libavdevice)
+# FFmpeg via pkg-config (only for non-Windows)
+if(NOT WIN32)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(AVCODEC REQUIRED libavcodec)
+    pkg_check_modules(AVFORMAT REQUIRED libavformat)
+    pkg_check_modules(AVUTIL REQUIRED libavutil)
+    pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
+    pkg_check_modules(SWSCALE REQUIRED libswscale)
+    pkg_check_modules(AVFILTER REQUIRED libavfilter)
+    pkg_check_modules(AVDEVICE REQUIRED libavdevice)
+endif()
 
-# OpenAL (使用NO_MODULE优先使用Homebrew提供的CMake配置文件)
-find_package(OpenAL REQUIRED NO_MODULE)
+# OpenAL (平台特定配置在下方)
 
 # GLEW
-find_package(GLEW REQUIRED)
 # Platform-specific FFmpeg detection
 if(WIN32)
     set(VCPKG_FFMPEG_PATH "D:/github/vcpkg/packages/ffmpeg_x64-windows")
@@ -214,6 +214,12 @@ if(WIN32)
     endif()
     message(STATUS "OpenAL include: ${OPENAL_INCLUDE_DIR}")
     message(STATUS "OpenAL library: ${OPENAL_LIBRARY}")
+    # 创建OpenAL::OpenAL目标
+    add_library(OpenAL::OpenAL STATIC IMPORTED)
+    set_target_properties(OpenAL::OpenAL PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${OPENAL_INCLUDE_DIR}"
+        IMPORTED_LOCATION "${OPENAL_LIBRARY}"
+    )
 else()
     find_package(OpenAL REQUIRED)
 endif()
@@ -403,19 +409,23 @@ target_include_directories(WZMediaPlayer PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     # FFmpeg
     ${FFMPEG_INCLUDE_DIRS}
-
-    ${AVCODEC_INCLUDE_DIRS}
-    ${AVFORMAT_INCLUDE_DIRS}
-    ${AVUTIL_INCLUDE_DIRS}
-    ${SWRESAMPLE_INCLUDE_DIRS}
-    ${SWSCALE_INCLUDE_DIRS}
-    ${AVFILTER_INCLUDE_DIRS}
-    ${AVDEVICE_INCLUDE_DIRS}
     # OpenAL
     ${OPENAL_INCLUDE_DIR}
     # GLEW
     ${GLEW_INCLUDE_DIRS}
 )
+
+if(NOT WIN32)
+    target_include_directories(WZMediaPlayer PRIVATE
+        ${AVCODEC_INCLUDE_DIRS}
+        ${AVFORMAT_INCLUDE_DIRS}
+        ${AVUTIL_INCLUDE_DIRS}
+        ${SWRESAMPLE_INCLUDE_DIRS}
+        ${SWSCALE_INCLUDE_DIRS}
+        ${AVFILTER_INCLUDE_DIRS}
+        ${AVDEVICE_INCLUDE_DIRS}
+    )
+endif()
 
 # ---------- Compile definitions ----------
 
@@ -433,16 +443,18 @@ if(WIN32)
 endif()
 # ---------- Link library directories ----------
 
-target_link_directories(WZMediaPlayer PRIVATE
-    # FFmpeg
-    ${AVCODEC_LIBRARY_DIRS}
-    ${AVFORMAT_LIBRARY_DIRS}
-    ${AVUTIL_LIBRARY_DIRS}
-    ${SWRESAMPLE_LIBRARY_DIRS}
-    ${SWSCALE_LIBRARY_DIRS}
-    ${AVFILTER_LIBRARY_DIRS}
-    ${AVDEVICE_LIBRARY_DIRS}
-)
+if(NOT WIN32)
+    target_link_directories(WZMediaPlayer PRIVATE
+        # FFmpeg
+        ${AVCODEC_LIBRARY_DIRS}
+        ${AVFORMAT_LIBRARY_DIRS}
+        ${AVUTIL_LIBRARY_DIRS}
+        ${SWRESAMPLE_LIBRARY_DIRS}
+        ${SWSCALE_LIBRARY_DIRS}
+        ${AVFILTER_LIBRARY_DIRS}
+        ${AVDEVICE_LIBRARY_DIRS}
+    )
+endif()
 
 # ---------- Link libraries ----------
 
@@ -458,13 +470,7 @@ target_link_libraries(WZMediaPlayer PRIVATE
     Qt6::MultimediaWidgets
     Qt6::ShaderTools
     # FFmpeg
-    ${AVCODEC_LIBRARIES}
-    ${AVFORMAT_LIBRARIES}
-    ${AVUTIL_LIBRARIES}
-    ${SWRESAMPLE_LIBRARIES}
-    ${SWSCALE_LIBRARIES}
-    ${AVFILTER_LIBRARIES}
-    ${AVDEVICE_LIBRARIES}
+    ${FFMPEG_LIBRARIES}
     # OpenAL (使用modern CMake target，会自动处理include directories)
     OpenAL::OpenAL
     # GLEW & OpenGL
