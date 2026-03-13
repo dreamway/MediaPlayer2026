@@ -507,6 +507,7 @@ endif()
 
 set_target_properties(WZMediaPlayer PROPERTIES
     AUTOUIC_SEARCH_PATHS "${WZMEDIA_SRC_DIR};${WZMEDIA_SRC_DIR}/gui;${WZMEDIA_SRC_DIR}/playlist"
+    AUTORCC_SEARCH_PATHS "${WZMEDIA_SRC_DIR};${WZMEDIA_SRC_DIR}/Resources;${WZMEDIA_SRC_DIR}/Shader;${WZMEDIA_SRC_DIR}/videoDecoder/opengl"
 )
 
 # ---------- Unit tests ----------
