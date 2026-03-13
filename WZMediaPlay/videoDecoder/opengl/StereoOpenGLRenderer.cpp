@@ -11,6 +11,7 @@
 
 #include <spdlog/spdlog.h>
 #include <QSettings>
+#include <QMutexLocker>
 
 extern spdlog::logger *logger;
 
@@ -233,8 +234,11 @@ bool StereoOpenGLRenderer::render3D(const Frame &frame)
     // 更新颜色空间
     updateColorSpace(frame);
 
-    // 设置帧数据
-    drawable_->videoFrame = frame;
+    // 设置帧数据 - 使用互斥锁保护，避免渲染时帧数据被修改
+    {
+        QMutexLocker locker(&drawable_->videoFrameMutex);
+        drawable_->videoFrame = frame;
+    }
     drawable_->isPaused = false;
 
     // 更新统计

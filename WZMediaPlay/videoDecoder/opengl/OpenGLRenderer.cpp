@@ -13,6 +13,7 @@
 #include <QOpenGLWidget>
 #include <QSettings>
 #include <QThread>
+#include <QMutexLocker>
 
 extern spdlog::logger *logger;
 
@@ -139,8 +140,11 @@ bool OpenGLRenderer::render(const Frame &frame)
     lastFrame_ = frame;
     hasLastFrame_ = true;
 
-    // 设置帧数据
-    drawable_->videoFrame = frame;
+    // 设置帧数据 - 使用互斥锁保护，避免渲染时帧数据被修改
+    {
+        QMutexLocker locker(&drawable_->videoFrameMutex);
+        drawable_->videoFrame = frame;
+    }
     drawable_->isPaused = false;
 
     // 更新统计
@@ -276,8 +280,11 @@ bool OpenGLRenderer::renderLastFrame()
     // 更新颜色空间
     updateColorSpace(lastFrame_);
 
-    // 设置缓存的帧数据
-    drawable_->videoFrame = lastFrame_;
+    // 设置缓存的帧数据 - 使用互斥锁保护
+    {
+        QMutexLocker locker(&drawable_->videoFrameMutex);
+        drawable_->videoFrame = lastFrame_;
+    }
     drawable_->isPaused = false;
 
     // 触发渲染（不增加统计，因为这是重复渲染）

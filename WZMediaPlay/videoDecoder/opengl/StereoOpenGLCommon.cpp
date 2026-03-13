@@ -15,6 +15,7 @@
 #include <QImage>
 #include <QDir>
 #include <QDateTime>
+#include <QMutexLocker>
 #include <libswscale/swscale.h>
 #include <libavutil/imgutils.h>
 #include <QMatrix3x3>
@@ -380,9 +381,18 @@ void StereoOpenGLCommon::paintGL()
 
 void StereoOpenGLCommon::paintGLStereo()
 {
+    // BUG-039 修复：使用互斥锁保护帧数据访问
+    // 避免在渲染时帧数据被其他线程修改导致崩溃
+    // 在锁的保护下复制帧数据，然后使用副本进行渲染
+    Frame localFrame;
+    {
+        QMutexLocker locker(&videoFrameMutex);
+        localFrame = videoFrame;
+    }
+
     // 复用父类的纹理上传逻辑，但使用 stereo shader 绘制
     // 简化设计：不再检查硬件帧，直接使用软件帧
-    const bool frameIsEmpty = videoFrame.isEmpty();
+    const bool frameIsEmpty = localFrame.isEmpty();
 
     static int paintGLStereoCounter = 0;
     paintGLStereoCounter++;
@@ -394,12 +404,12 @@ void StereoOpenGLCommon::paintGLStereo()
     }
 
     if (logger && paintGLStereoCounter % 100 == 0) {
-        logger->debug("StereoOpenGLCommon::paintGLStereo: Called {} times, frameIsEmpty: {}, videoFrame.isEmpty(): {}, hasImage: {}, m_stereoFormat: {}, m_stereoShaderInitialized: {}",
-            paintGLStereoCounter, frameIsEmpty, videoFrame.isEmpty(), hasImage,
+        logger->debug("StereoOpenGLCommon::paintGLStereo: Called {} times, frameIsEmpty: {}, localFrame.isEmpty(): {}, hasImage: {}, m_stereoFormat: {}, m_stereoShaderInitialized: {}",
+            paintGLStereoCounter, frameIsEmpty, localFrame.isEmpty(), hasImage,
             static_cast<int>(m_stereoFormat), m_stereoShaderInitialized);
-        if (!videoFrame.isEmpty()) {
-            logger->debug("StereoOpenGLCommon::paintGLStereo: videoFrame - width: {}, height: {}, planes: {}, isHW: {}",
-                videoFrame.width(0), videoFrame.height(0), videoFrame.numPlanes(), videoFrame.isHW());
+        if (!localFrame.isEmpty()) {
+            logger->debug("StereoOpenGLCommon::paintGLStereo: localFrame - width: {}, height: {}, planes: {}, isHW: {}",
+                localFrame.width(0), localFrame.height(0), localFrame.numPlanes(), localFrame.isHW());
         }
     }
 
@@ -424,25 +434,25 @@ void StereoOpenGLCommon::paintGLStereo()
     if (!frameIsEmpty)
     {
         // 根据实际帧格式动态设置 numPlanes
-        numPlanes = videoFrame.numPlanes();
+        numPlanes = localFrame.numPlanes();
         if (numPlanes < 2) numPlanes = 3;  // 默认 YUV420P
 
         const GLsizei widths[3] = {
-            videoFrame.width(0),
-            videoFrame.width(1),
-            videoFrame.width(2),
+            localFrame.width(0),
+            localFrame.width(1),
+            localFrame.width(2),
         };
         const GLsizei heights[3] = {
-            videoFrame.height(0),
-            videoFrame.height(1),
-            videoFrame.height(2),
+            localFrame.height(0),
+            localFrame.height(1),
+            localFrame.height(2),
         };
 
         // 诊断日志
         if (logger && paintGLStereoCounter % 10 == 0) {
             logger->info("StereoOpenGLCommon::paintGLStereo: Frame info - numPlanes: {}, Y: {}x{}, U: {}x{}, V: {}x{}, linesize: {}/{}/{}",
                 numPlanes, widths[0], heights[0], widths[1], heights[1], widths[2], heights[2],
-                videoFrame.linesize(0), videoFrame.linesize(1), videoFrame.linesize(2));
+                localFrame.linesize(0), localFrame.linesize(1), localFrame.linesize(2));
         }
         const int bytesMultiplier = (m_depth + 7) / 8;
         const GLenum dataType = (bytesMultiplier == 1) ? GL_UNSIGNED_BYTE : GL_UNSIGNED_SHORT;
@@ -454,7 +464,7 @@ void StereoOpenGLCommon::paintGLStereo()
         if (doReset)
         {
             // 简化设计：不再使用硬件互操作，直接使用软件帧路径
-            const qint32 halfLinesize = (videoFrame.linesize(0) >> videoFrame.chromaShiftW());
+            const qint32 halfLinesize = (localFrame.linesize(0) >> localFrame.chromaShiftW());
 
             // NV12 格式的 UV 平面 linesize 计算说明：
             // - Y 平面：linesize(0) = width（每像素 1 字节）
@@ -466,8 +476,8 @@ void StereoOpenGLCommon::paintGLStereo()
                 // YUV420P 格式：U 和 V 是独立的平面
                 correctLinesize =
                 (
-                    (halfLinesize == videoFrame.linesize(1) && videoFrame.linesize(1) == videoFrame.linesize(2)) &&
-                    (videoFrame.linesize(1) == halfLinesize)
+                    (halfLinesize == localFrame.linesize(1) && localFrame.linesize(1) == localFrame.linesize(2)) &&
+                    (localFrame.linesize(1) == halfLinesize)
                 );
             } else {
                 // NV12 格式：UV 是交织的单平面
@@ -475,7 +485,7 @@ void StereoOpenGLCommon::paintGLStereo()
                 // 因为每个 UV 对占 2 字节，对应 2 个水平像素
                 // 这意味着 correctLinesize 应该用不同的逻辑
                 // 对于 NV12，linesize 匹配，但宽度是 Y 的一半
-                correctLinesize = (videoFrame.linesize(0) == videoFrame.linesize(1));
+                correctLinesize = (localFrame.linesize(0) == localFrame.linesize(1));
             }
 
             const bool isNV12 = (numPlanes == 2);
@@ -510,7 +520,7 @@ void StereoOpenGLCommon::paintGLStereo()
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             }
-            texCoordYCbCr[2] = texCoordYCbCr[6] = (videoFrame.linesize(0) == widths[0]) ? 1.0f : (widths[0] / (videoFrame.linesize(0) + 1.0f));
+            texCoordYCbCr[2] = texCoordYCbCr[6] = (localFrame.linesize(0) == widths[0]) ? 1.0f : (widths[0] / (localFrame.linesize(0) + 1.0f));
             resetDone = true;
             hasImage = false;
         }
@@ -521,7 +531,7 @@ void StereoOpenGLCommon::paintGLStereo()
 
             for (qint32 p = 0; p < numPlanes && p < 3; ++p)
             {
-                const quint8 *data = videoFrame.constData(p);
+                const quint8 *data = localFrame.constData(p);
                 // NV12 的 UV 平面纹理宽度 = widths[p]（像素宽度）
                 // NV12 的 UV 平面 linesize = widths[0]（字节宽度，因为每个 UV 对占 2 字节）
                 const GLsizei texWidth = widths[p];
@@ -534,7 +544,7 @@ void StereoOpenGLCommon::paintGLStereo()
 
                 // 计算源数据的行宽度（字节）
                 // 对于 NV12 UV 平面，linesize(1) 是字节宽度（= Y 宽度），但纹理宽度是 Y 宽度的一半
-                const GLsizei srcLineSize = videoFrame.linesize(p);
+                const GLsizei srcLineSize = localFrame.linesize(p);
                 const GLsizei dstLineSize = texWidth * planeBytesPerPixel;
 
                 if (hasPbo)
@@ -604,16 +614,11 @@ void StereoOpenGLCommon::paintGLStereo()
         // 简化设计：总是清除帧数据（已上传到纹理）
 
         // 在清除帧之前保存帧高度（用于颜色空间猜测）
-        m_lastFrameHeight = videoFrame.isEmpty() ? 0 : videoFrame.height(0);
+        m_lastFrameHeight = localFrame.isEmpty() ? 0 : localFrame.height(0);
 
-        if (true)
+        // 清除原始帧数据（需要加锁）
         {
-            videoFrame.clear();
-        }
-        else
-        {
-            // 硬件解码且不是 copy 模式：数据在 GPU 上，但 Frame 对象可能还持有引用
-            // 为了释放内存，仍然清除 Frame（硬件纹理已经绑定，不需要 CPU 数据）
+            QMutexLocker locker(&videoFrameMutex);
             videoFrame.clear();
         }
         hasImage = true;

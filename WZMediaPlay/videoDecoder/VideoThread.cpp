@@ -1005,7 +1005,11 @@ void VideoThread::run()
                     break;
                 }
                 if (controller_ && controller_->isPaused()) {
-                    SPDLOG_LOGGER_INFO(logger, "VideoThread::run: Paused flag detected, continuing");
+                    // 暂停时等待更长时间，避免 CPU 空转和大量日志
+                    SPDLOG_LOGGER_DEBUG(logger, "VideoThread::run: Paused, waiting...");
+                    for (int i = 0; i < 50 && !br_; ++i) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    }
                     continue;
                 }
 

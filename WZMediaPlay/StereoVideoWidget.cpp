@@ -554,18 +554,14 @@ bool StereoVideoWidget::StopRendering()
         videoRenderer_->clear();
     }
 
-    // BUG-034 补充：通过渲染器获取 StereoOpenGLCommon 并强制清除
-    // 注意：videoRenderer_->clear() 会清除帧数据，但 paintGLStereo() 在 hasImage==false 时
-    // 已经有了 glClear() 处理，这里我们触发一次 update 来确保清除生效
+    // BUG-034 补充：通过渲染器获取 OpenGL widget 并强制立即重绘
+    // videoRenderer_->clear() 会清除帧数据（hasImage = false）
+    // 我们需要强制 OpenGL widget 重绘，让它执行 paintGLStereo() 中的 glClear()
     auto *oglRenderer = dynamic_cast<OpenGLRenderer *>(videoRenderer_.get());
     if (oglRenderer && oglRenderer->widget()) {
-        // 触发重绘，paintGLStereo() 中的 glClear() 会清除缓冲区
-        oglRenderer->widget()->update();
+        // 使用 repaint() 强制立即同步重绘，确保 glClear() 被执行
+        oglRenderer->widget()->repaint();
     }
-
-    // 触发立即重绘，确保 OpenGL 缓冲区被清空后再显示 Logo
-    // 使用 repaint() 而不是 update() 来强制立即重绘
-    repaint();
 
     // 在缓冲区清除后显示 Logo
     if (mWindowLogo) {

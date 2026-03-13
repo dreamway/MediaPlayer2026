@@ -33,6 +33,8 @@
 #include <QCoreApplication>
 #include <QImage>
 #include <QTimer>
+#include <QMutex>
+#include <QMutexLocker>
 
 //class OpenGLHWInterop;
 
@@ -103,6 +105,7 @@ public:
     // std::shared_ptr<OpenGLHWInterop> m_hwInterop;  // 已移除
     QStringList videoAdjustmentKeys;
     Frame videoFrame;
+    mutable QMutex videoFrameMutex;  // 保护 videoFrame 的互斥锁
 
     AVColorPrimaries m_colorPrimaries = AVCOL_PRI_UNSPECIFIED;
     AVColorTransferCharacteristic m_colorTrc = AVCOL_TRC_UNSPECIFIED;

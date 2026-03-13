@@ -20,7 +20,47 @@
 
 ## 🐛 待修复的 BUG
 
-(无)
+| 编号 | 描述 | 优先级 | 状态 | 发现日期 |
+|------|------|--------|------|---------|
+| BUG-039 | 停止播放后画面和UI状态未重置 | P1 | 🟡 修复中 | 2026-03-13 |
+| BUG-040 | Seeking 时线程竞争导致崩溃 | P0 | 🟡 修复中 | 2026-03-13 |
+| BUG-041 | 暂停时大量日志输出导致性能问题 | P2 | 🟡 修复中 | 2026-03-13 |
+
+---
+
+### BUG-039: 停止播放后画面和UI状态未重置
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 手动点击"停止"按钮后：1) StereoVideoWidget 渲染的画面未清除，仍显示最后一帧；2) 底部状态栏的进度条未归零；3) 当前时间和总时间未重置；4) Logo 未显示 |
+| **截图** | `new-docs/images/stopped-but-slider-and-rendering-is-wrong.png` |
+| **根因** | 1. `on_pushButton_stop_clicked()` 未正确重置 UI 状态<br>2. `StopRendering()` 未正确清除 OpenGL 缓冲区并触发重绘<br>3. macOS 上资源路径错误导致 Logo 无法加载 |
+| **修复内容** | 1. 在 `on_pushButton_stop_clicked()` 中添加 UI 重置代码<br>2. 修改 `StopRendering()` 使用 `repaint()` 强制 OpenGL widget 同步重绘<br>3. 修复 macOS 资源路径：添加 `getResourcesBasePath()` 和 `getConfigPath()` 辅助函数 |
+| **修复文件** | `WZMediaPlay/MainWindow.cpp`, `WZMediaPlay/StereoVideoWidget.cpp`, `WZMediaPlay/ApplicationSettings.cpp` |
+| **优先级** | P1 |
+| **状态** | 🟡 修复中（代码已修改，待测试验证） |
+
+### BUG-040: Seeking 时线程竞争导致崩溃
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 随机 Seeking 时应用崩溃，崩溃发生在 `glTexSubImage2D` 调用中 |
+| **根因** | `videoFrame` 被主线程（渲染）和解码线程同时访问，缺少互斥锁保护 |
+| **修复内容** | 1. 在 `OpenGLCommon.hpp` 中添加 `videoFrameMutex` 互斥锁<br>2. 在 `paintGLStereo()` 中使用本地帧副本<br>3. 在渲染器中加锁保护帧数据赋值 |
+| **修复文件** | `WZMediaPlay/videoDecoder/opengl/OpenGLCommon.hpp`, `StereoOpenGLCommon.cpp`, `OpenGLRenderer.cpp`, `StereoOpenGLRenderer.cpp` |
+| **优先级** | P0 |
+| **状态** | 🟡 修复中（代码已修改，待测试验证） |
+
+### BUG-041: 暂停时大量日志输出导致性能问题
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 暂停视频后，日志中出现大量 "VideoThread::run: Paused flag detected, continuing" 日志（每秒约 100 次），影响性能 |
+| **根因** | VideoThread 在暂停状态下只调用 `continue` 循环，没有足够的等待时间，导致 CPU 空转和大量日志输出 |
+| **修复内容** | 1. 将暂停日志从 INFO 降级为 DEBUG<br>2. 在暂停检查中增加 50ms 等待时间，避免 CPU 空转 |
+| **修复文件** | `WZMediaPlay/videoDecoder/VideoThread.cpp` |
+| **优先级** | P2 |
+| **状态** | 🟡 修复中（代码已修改，待测试验证） |
 
 ---
 

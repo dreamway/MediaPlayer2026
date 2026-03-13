@@ -1809,9 +1809,26 @@ void MainWindow::on_pushButton_stop_clicked()
     playController_->stop();
 
     ui.playWidget->StopRendering();
+
+    // BUG-039 修复：停止播放时重置 UI 状态
+    // 清除渲染画面
+    if (ui.playWidget) {
+        ui.playWidget->clear();
+    }
+
+    // 重置进度条和时间显示
+    ui.horizontalSlider_playProgress->setValue(0);
+    ui.horizontalSlider_playProgress->setEnabled(false);
+    ui.label_totalTime->setText(QStringLiteral("00:00:00"));
+    ui.label_playTime->setText(QStringLiteral("00:00:00"));
+    currentElapsedInSeconds_ = 0;
+
+    // 重置播放按钮状态
     if (!playController_->isPlaying()) {
         ui.pushButton_playPause->setChecked(false);
     }
+
+    logger->info("on_pushButton_stop_clicked: UI reset completed");
 }
 
 void MainWindow::on_pushButton_previous_clicked()

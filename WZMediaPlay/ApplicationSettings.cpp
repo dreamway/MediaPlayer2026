@@ -10,7 +10,37 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QString>
+
+#ifdef Q_OS_MAC
+#include <CoreFoundation/CoreFoundation.h>
+#endif
+
 using namespace std;
+
+// macOS BUG 修复：获取正确的资源路径
+// 在 macOS app bundle 中，资源在 Contents/Resources/，而 applicationDirPath() 返回 Contents/MacOS/
+static QString getResourcesBasePath()
+{
+#ifdef Q_OS_MAC
+    // macOS app bundle: 返回 Contents/Resources 路径
+    return QCoreApplication::applicationDirPath() + "/../Resources";
+#else
+    // Windows/Linux: 返回应用程序目录
+    return QCoreApplication::applicationDirPath();
+#endif
+}
+
+// 获取配置文件路径
+static QString getConfigPath()
+{
+#ifdef Q_OS_MAC
+    // macOS app bundle: 配置文件在 Contents/config/
+    return QCoreApplication::applicationDirPath() + "/../config";
+#else
+    // Windows/Linux: 配置文件在应用程序目录下的 config/
+    return QCoreApplication::applicationDirPath() + "/config";
+#endif
+}
 
 ApplicationSettings::ApplicationSettings(QObject *parent)
     : QObject(parent)
@@ -121,20 +151,20 @@ QString ApplicationSettings::ToString()
 
 void ApplicationSettings::read_SplashLogoPath()
 {
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     QVariant variant = setting.value("/MediaPlay/SplashLogoPath");
-    QString splashPath = variant.isNull() ? QString(QCoreApplication::applicationDirPath() + "/Resources/logo/SPElg.png")
+    QString splashPath = variant.isNull() ? getResourcesBasePath() + "/logo/SPElg.png"
                                            : variant.toString();
 
     // 修复：将相对路径转换为绝对路径
-    // 如果路径以 "./" 开头，则相对于应用程序目录
+    // 如果路径以 "./" 开头，则相对于资源目录
     if (splashPath.startsWith("./")) {
-        splashPath = QCoreApplication::applicationDirPath() + "/" + splashPath.mid(2);
+        splashPath = getResourcesBasePath() + "/" + splashPath.mid(2);
     } else if (!splashPath.isEmpty() && !QDir::isAbsolutePath(splashPath)) {
-        // 如果不是绝对路径，则相对于应用程序目录
-        splashPath = QCoreApplication::applicationDirPath() + "/" + splashPath;
+        // 如果不是绝对路径，则相对于资源目录
+        splashPath = getResourcesBasePath() + "/" + splashPath;
     }
 
     GlobalDef::getInstance()->SPLASH_LOGO_PATH = splashPath;
@@ -148,29 +178,29 @@ void ApplicationSettings::read_SplashLogoPath()
 
 void ApplicationSettings::write_SplashLogoPath(QString path)
 {
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     QSettings setting(cfgPath, QSettings::IniFormat);
     setting.setValue("/MediaPlay/SplashLogoPath", path);
 }
 
 void ApplicationSettings::read_ApplicationGeneral()
 {
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     QVariant variant = setting.value("/MediaPlay/Language");
     GlobalDef::getInstance()->LANGUAGE = variant.isNull() ? 0 : variant.toInt();
 
     variant = setting.value("/MediaPlay/PlayWindowLogoPath");
-    GlobalDef::getInstance()->PLAY_WINDOW_LOGO_PATH = variant.isNull() ? QString(QCoreApplication::applicationDirPath() + "/Resources/logo/PWlg.png")
+    GlobalDef::getInstance()->PLAY_WINDOW_LOGO_PATH = variant.isNull() ? getResourcesBasePath() + "/logo/PWlg.png"
                                                                        : variant.toString();
 
     variant = setting.value("/MediaPlay/MainWindowLogoPath");
-    GlobalDef::getInstance()->MAIN_WINDOW_LOGO_PATH = variant.isNull() ? QString(QCoreApplication::applicationDirPath() + "/Resources/logo/MWlg.png")
+    GlobalDef::getInstance()->MAIN_WINDOW_LOGO_PATH = variant.isNull() ? getResourcesBasePath() + "/logo/MWlg.png"
                                                                        : variant.toString();
 
     variant = setting.value("/MediaPlay/ScreenshotDir");
-    GlobalDef::getInstance()->SCREENSHOT_DIR = variant.isNull() ? QString(QCoreApplication::applicationDirPath() + "/Screenshot") : variant.toString();
+    GlobalDef::getInstance()->SCREENSHOT_DIR = variant.isNull() ? QCoreApplication::applicationDirPath() + "/Screenshot" : variant.toString();
 
     variant = setting.value("/MediaPlay/MoveWindowFit");
     GlobalDef::getInstance()->MOVE_FIT_WINDOW_SATAE = variant.isNull() ? 0 : variant.toInt();
@@ -186,7 +216,7 @@ void ApplicationSettings::read_ApplicationGeneral()
 
 void ApplicationSettings::write_ApplicationGeneral()
 {
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     setting.setValue("/MediaPlay/Language", GlobalDef::getInstance()->LANGUAGE);
@@ -199,7 +229,7 @@ void ApplicationSettings::write_ApplicationGeneral()
 
 void ApplicationSettings::read_Hotkey()
 {
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     QVariant variant = setting.value("/USER/FileTab_OpenFile");
@@ -313,7 +343,7 @@ void ApplicationSettings::read_Hotkey()
 
 void ApplicationSettings::write_Hotkey()
 {
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     setting.setValue("/USER/FileTab_OpenFile", GlobalDef::getInstance()->userWZKeySequence.hotKeyMap.value("FileTab_OpenFile").toString());
@@ -351,7 +381,7 @@ void ApplicationSettings::write_Hotkey()
 
 void ApplicationSettings::read_WindowSizeState()
 {
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     QVariant variant = setting.value("/MediaPlay/Window_Width");
@@ -396,7 +426,7 @@ void ApplicationSettings::read_WindowSizeState()
 
 void ApplicationSettings::write_WindowSizeState()
 {
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     setting.setValue("/MediaPlay/Window_Width", GlobalDef::getInstance()->MIN_WINDOW_WIDTH);
@@ -421,7 +451,7 @@ void ApplicationSettings::write_WindowSizeState()
 
 void ApplicationSettings::read_PlayState()
 {
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     QVariant variant = setting.value("/MediaPlay/B_VOLUME_MUTE");
@@ -449,7 +479,7 @@ void ApplicationSettings::read_PlayState()
 
 void ApplicationSettings::write_PlayState()
 {
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     setting.setValue("/MediaPlay/B_VOLUME_MUTE", GlobalDef::getInstance()->B_VOLUME_MUTE);
@@ -463,11 +493,11 @@ void ApplicationSettings::write_PlayState()
 
 void ApplicationSettings::read_PlayList()
 {
-    //QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    //QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     //QSettings setting(cfgPath, QSettings::IniFormat);
 
     //    list file
-    QFile file(QCoreApplication::applicationDirPath() + "/config/playList.json");
+    QFile file(getConfigPath() + "/playList.json");
     if (!file.open(QIODevice::ReadWrite)) {
         if (logger) {
             logger->warn("can't open json file...");
@@ -548,7 +578,7 @@ void ApplicationSettings::read_PlayList()
 
 void ApplicationSettings::write_PlayList()
 {
-    QFile file(QCoreApplication::applicationDirPath() + "/config/playList.json");
+    QFile file(getConfigPath() + "/playList.json");
     if (!file.open(QIODevice::ReadWrite)) {
         if (logger) {
             logger->error("can't open json file: {}", file.fileName().toStdString());
@@ -595,7 +625,7 @@ void ApplicationSettings::write_PlayList()
 
 void ApplicationSettings::clear_PlayList()
 {
-    QFile file(QCoreApplication::applicationDirPath() + "/config/playList.json");
+    QFile file(getConfigPath() + "/playList.json");
     if (!file.open(QIODevice::ReadWrite)) {
         if (logger) {
             logger->error("can't open json file.. {} ", file.fileName().toStdString());
@@ -677,7 +707,7 @@ void ApplicationSettings::export_PlayList(QString path, int index)
 
 void ApplicationSettings::read_about_copyright()
 {
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
+    QString cfgPath = getConfigPath() + "/SystemConfig.ini";
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     QVariant variant = setting.value("/MediaPlay/ABOUT_CR_ZHCN");
