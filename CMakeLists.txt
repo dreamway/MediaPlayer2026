@@ -480,9 +480,14 @@ target_link_libraries(WZMediaPlayer PRIVATE
     # spdlog & fmt
     spdlog::spdlog
     fmt::fmt
-    # System
-    pthread
 )
+
+if(NOT WIN32)
+    target_link_libraries(WZMediaPlayer PRIVATE
+        # System
+        pthread
+    )
+endif()
 
 # Platform-specific libraries
 if(WIN32)
