@@ -638,7 +638,16 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
     // 如果刚刚完成 seeking，确保第一帧是有效的
     if (wasSeekingRecently_) {
         if (videoFrame.isEmpty() || videoFrame.width(0) <= 0 || videoFrame.height(0) <= 0) {
+            // 帧无效，清空并跳过，但需要设置超时保护避免无限循环
             videoFrame.clear();
+
+            // 检查是否超时（seeking 后 500ms 内必须接受帧，否则重置标志）
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - seekingStartTime_).count();
+            if (elapsed > 500) {
+                SPDLOG_LOGGER_WARN(logger, "VideoThread::renderFrame: wasSeekingRecently_ timeout after {}ms, resetting flag", elapsed);
+                wasSeekingRecently_ = false;
+            }
             return false;
         }
 

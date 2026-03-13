@@ -323,32 +323,7 @@ void StereoVideoWidget::initializeUIComponents()
         mSubtitleWidget->hide();
     }
 
-    // FPS 显示标签（读取配置）
-    QString cfgPath = QCoreApplication::applicationDirPath() + "/config/SystemConfig.ini";
-    QSettings setting(cfgPath, QSettings::IniFormat);
-    QVariant variant = setting.value("/System/ShowFPS");
-    mShowFPS = variant.isNull() ? false : variant.toBool();
-
-    if (!mFPSLabel) {
-        mFPSLabel = new QLabel(this);
-        mFPSLabel->setStyleSheet("QLabel {"
-                                 "background-color: rgba(0, 0, 0, 150);"
-                                 "color: #00FF00;"
-                                 "font-size: 16px;"
-                                 "font-weight: bold;"
-                                 "padding: 4px 8px;"
-                                 "border-radius: 4px;"
-                                 "}");
-        mFPSLabel->setText("FPS: --");
-        mFPSLabel->setAlignment(Qt::AlignCenter);
-        mFPSLabel->resize(100, 30);
-        mFPSLabel->setVisible(mShowFPS);
-    }
-
-    // 初始化 FPS 计算相关变量
-    mLastFPSTime = std::chrono::steady_clock::now();
-    mFPSCounter = 0;
-    mCurrentFPS = 0.0f;
+    // FPS 显示功能已移除（非刚需功能）
 }
 
 void StereoVideoWidget::setupUIComponentsLayout()
@@ -358,12 +333,6 @@ void StereoVideoWidget::setupUIComponentsLayout()
      * - z-order决定组件的显示优先级
      * - 顶层组件会覆盖底层组件
      */
-
-    // FPS 标签应该在最顶层
-    // - 原因：FPS标签需要始终可见，不被其他组件覆盖
-    if (mFPSLabel) {
-        mFPSLabel->raise();
-    }
 
     // FloatButton 应该在顶层（z-order 最高）
     // - 原因：需要快速访问播放列表按钮
@@ -471,19 +440,6 @@ void StereoVideoWidget::resizeEvent(QResizeEvent *e)
         mWindowLogo->show();
     }
 
-    // mFPSLabel 位置：右上角
-    // - X坐标：窗口宽度 - 标签宽度 - 边距（10px）
-    // - Y坐标：边距（10px）
-    // - 只在启用FPS显示时更新位置
-    if (mFPSLabel && mShowFPS) {
-        int labelWidth = 100;
-        int labelHeight = 30;
-        int margin = 10;
-        int x = width() - labelWidth - margin;
-        int y = margin;
-        mFPSLabel->move(x, y);
-    }
-    
     // 确保OpenGL widget正确调整大小（布局会自动处理，但这里可以添加日志）
     if (videoRenderer_) {
         auto *oglRenderer = dynamic_cast<OpenGLRenderer *>(videoRenderer_.get());
@@ -499,39 +455,6 @@ void StereoVideoWidget::resizeEvent(QResizeEvent *e)
 void StereoVideoWidget::paintEvent(QPaintEvent *e)
 {
     QWidget::paintEvent(e);
-
-    // 更新 FPS 显示（如果启用）
-    if (mShowFPS && mFPSLabel) {
-        mFPSCounter++;
-        auto now = std::chrono::steady_clock::now();
-
-        // 初始化时间戳（首次调用）
-        if (mLastFPSTime.time_since_epoch().count() == 0) {
-            mLastFPSTime = now;
-            mFPSCounter = 0;
-        }
-
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - mLastFPSTime).count();
-
-        // 每秒更新一次 FPS
-        if (elapsed >= 1000) {
-            mCurrentFPS = (mFPSCounter * 1000.0f) / elapsed;
-            mFPSCounter = 0;
-            mLastFPSTime = now;
-
-            // 更新 FPS 标签文本
-            mFPSLabel->setText(QString("FPS: %1").arg(mCurrentFPS, 0, 'f', 1));
-            // 确保标签可见且位置正确
-            if (!mFPSLabel->isVisible()) {
-                int labelWidth = 100;
-                int margin = 10;
-                int x = width() - labelWidth - margin;
-                int y = margin;
-                mFPSLabel->move(x, y);
-                mFPSLabel->show();
-            }
-        }
-    }
 
     // 渲染由 VideoRenderer 内部的 widget 处理
 }
@@ -974,23 +897,6 @@ void StereoVideoWidget::OnUpdateStatusTimer()
     // 更新字幕位置（字幕使用毫秒）
     if (mSubtitleWidget) {
         UpdateSubtitlePosition(currentPositionMs);
-    }
-
-    // BUG 11：FPS 从 Statistics 读取（由 VideoThread 计算），避免用 paintEvent 计数导致显示过低
-    if (mShowFPS && mFPSLabel && playController_) {
-        auto *stats = playController_->getStatistics();
-        if (stats) {
-            double fps = stats->videoStats().fps;
-            mFPSLabel->setText(QString("FPS: %1").arg(fps, 0, 'f', 1));
-            if (!mFPSLabel->isVisible()) {
-                int labelWidth = 100;
-                int margin = 10;
-                int x = width() - labelWidth - margin;
-                int y = margin;
-                mFPSLabel->move(x, y);
-                mFPSLabel->show();
-            }
-        }
     }
 }
 

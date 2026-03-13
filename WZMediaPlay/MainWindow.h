@@ -262,6 +262,9 @@ private:
     QShortcut *shortcut_SeekLeftLarge = nullptr;
     QShortcut *shortcut_SeekRightLarge = nullptr;
 
+    // Camera Tab (新增，用于摄像头测试)
+    QShortcut *shortcut_OpenCamera = nullptr;
+
     DrawWidget *mDrawWidget = nullptr;
 
     //  Move  , 将Movie从FFMPEG中剥离出来，FFMPEGView只做渲染相关的事情

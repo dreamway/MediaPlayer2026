@@ -379,6 +379,14 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0.0"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.0"
     )
+
+    # 拷贝 Resources 目录到 app bundle
+    add_custom_command(TARGET WZMediaPlayer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${WZMEDIA_SRC_DIR}/Resources"
+        "$<TARGET_FILE_DIR:WZMediaPlayer>/../Resources"
+        COMMENT "Copying Resources to app bundle"
+    )
 endif()
 
 # ---------- Include directories ----------

@@ -17,6 +17,7 @@
 #include "videoDecoder/hardware_decoder.h"
 #include "videoDecoder/opengl/OpenGLRenderer.h"
 #include "videoDecoder/opengl/StereoOpenGLRenderer.h"
+#include <QCoreApplication>
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -84,6 +85,14 @@ PlayController::PlayController(QObject *parent)
 
     // 初始化 Audio 指针（Video 类已删除）
     audio_ = nullptr;
+
+    // 设置状态机状态变化回调，发出 playbackStateChanged 信号
+    stateMachine_.setStateChangeCallback([this](PlaybackState oldState, PlaybackState newState, const std::string& reason) {
+        // 使用 QMetaObject::invokeMethod 确保在主线程中发出信号
+        QMetaObject::invokeMethod(this, [this, newState]() {
+            emit playbackStateChanged(newState);
+        }, Qt::QueuedConnection);
+    });
 
     SPDLOG_LOGGER_INFO(logger, "PlayController created");
 }
@@ -938,6 +947,12 @@ void PlayController::stopThread(QThread *thread, const char *threadName, int tim
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    // 关键修复：即使 isRunning() 返回 false，也调用 wait() 确保线程完全退出
+    // 这避免了 "QThread: Destroyed while thread is still running" 崩溃
+    if (thread->isRunning()) {
+        thread->wait(1000);
     }
 
     SPDLOG_LOGGER_DEBUG(logger, "PlayController::stopThread: {} stopped", threadName);

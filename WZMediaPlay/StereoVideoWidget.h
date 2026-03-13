@@ -172,17 +172,6 @@ public:
      */
     SubtitleWidget *mSubtitleWidget = nullptr;
 
-    /**
-     * mFPSLabel：FPS显示标签
-     * - 位置：右上角（10px边距）
-     * - 显示逻辑：仅在mShowFPS为true时显示
-     * - 功能：实时显示当前帧率（FPS）
-     * - 样式：半透明黑色背景、绿色文字、16px字体、粗体
-     * - 更新频率：每秒更新一次
-     * - 配置项：/System/ShowFPS（SystemConfig.ini）
-     */
-    QLabel *mFPSLabel = nullptr;
-
     // Camera 和 Shader 管理（分离的功能）
     class ShaderManager *shaderManager() const { return shaderManager_; }
 
@@ -221,12 +210,6 @@ private:
     // 定时器
     QTimer *renderTimer_ = nullptr;
     QTimer *statusUpdateTimer_ = nullptr;
-
-    // FPS 显示相关
-    bool mShowFPS = false;
-    std::chrono::steady_clock::time_point mLastFPSTime;
-    int mFPSCounter = 0;
-    float mCurrentFPS = 0.0f;
 
     // 字幕字体高度（与 FFmpegView 兼容）
     int mSubtitleFontHeight = 50;

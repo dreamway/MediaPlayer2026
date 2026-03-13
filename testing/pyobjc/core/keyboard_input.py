@@ -185,6 +185,11 @@ class KeyboardInput:
         KeyboardInput.send_key('m', delay=0.2)
 
     @staticmethod
+    def toggle_camera():
+        """切换摄像头 (Ctrl+Shift+C)"""
+        KeyboardInput.send_hotkey('c', ['command', 'shift'], delay=0.5)
+
+    @staticmethod
     def take_screenshot():
         """截屏 (Cmd+S)"""
         KeyboardInput.send_hotkey('s', ['command'], delay=0.3)

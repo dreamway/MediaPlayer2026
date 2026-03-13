@@ -203,17 +203,26 @@ MainWindow::MainWindow(QWidget *parent)
     // 创建 CameraOpenGLWidget（与 StereoVideoWidget 同级）
     // 注意：Qt 6.4 on Linux 的 QOpenGLWidget 存在 RHI 合成 bug，
     // 即使 hide() 也会导致 rhiFlush 崩溃。Camera 功能在 Linux 上暂时禁用。
-#ifdef Q_OS_WIN
+    // Windows 和 macOS 可以正常使用摄像头功能。
+#ifndef Q_OS_LINUX
     cameraWidget_ = new CameraOpenGLWidget(ui.playWidget->parentWidget());
     if (cameraWidget_) {
         cameraWidget_->hide();
+
+        // 关键修复：设置与 playWidget 相同的 sizePolicy，确保切换时布局一致
+        cameraWidget_->setSizePolicy(ui.playWidget->sizePolicy());
+        cameraWidget_->setMinimumSize(ui.playWidget->minimumSize());
+        cameraWidget_->setMaximumSize(ui.playWidget->maximumSize());
+
         QWidget *parentWidget = ui.playWidget->parentWidget();
         if (parentWidget) {
             QVBoxLayout *parentLayout = qobject_cast<QVBoxLayout*>(parentWidget->layout());
             if (parentLayout) {
                 int playWidgetIndex = parentLayout->indexOf(ui.playWidget);
                 if (playWidgetIndex >= 0) {
-                    parentLayout->insertWidget(playWidgetIndex + 1, cameraWidget_);
+                    // 在 playWidget 后面插入，使用相同的 stretch factor
+                    int stretch = parentLayout->stretch(playWidgetIndex);
+                    parentLayout->insertWidget(playWidgetIndex + 1, cameraWidget_, stretch);
                 } else {
                     parentLayout->addWidget(cameraWidget_);
                 }
@@ -3339,33 +3348,44 @@ void MainWindow::onPlaybackStateChanged(PlaybackState state)
 
     // 添加异常保护
     try {
-        if (state == PlaybackState::Stopped) {
-            // 清除上一次播放视频关联的 Subtitle 文件
-            mLastMovieFn = mCurMovieFilename;
-            if (!GlobalDef::getInstance()->USER_SELECTED_SUBTITLE_FILENAME.isEmpty()) {
-                GlobalDef::getInstance()->USER_SELECTED_SUBTITLE_FILENAME.clear();
-                logger->info("Cleared user selected subtitle file on playback stop");
-            }
-            mLastSubtitleFn = GlobalDef::getInstance()->USER_SELECTED_SUBTITLE_FILENAME;
-            GlobalDef::getInstance()->USER_SELECTED_SUBTITLE_FILENAME = "";
+        // 根据播放状态更新 playPause 按钮状态
+        switch (state) {
+            case PlaybackState::Playing:
+                ui.pushButton_playPause->setChecked(true);
+                break;
+            case PlaybackState::Paused:
+                ui.pushButton_playPause->setChecked(false);
+                break;
+            case PlaybackState::Stopped:
+                // 清除上一次播放视频关联的 Subtitle 文件
+                mLastMovieFn = mCurMovieFilename;
+                if (!GlobalDef::getInstance()->USER_SELECTED_SUBTITLE_FILENAME.isEmpty()) {
+                    GlobalDef::getInstance()->USER_SELECTED_SUBTITLE_FILENAME.clear();
+                    logger->info("Cleared user selected subtitle file on playback stop");
+                }
+                mLastSubtitleFn = GlobalDef::getInstance()->USER_SELECTED_SUBTITLE_FILENAME;
+                GlobalDef::getInstance()->USER_SELECTED_SUBTITLE_FILENAME = "";
+
+                // 重置 UI 状态
+                ui.pushButton_playPause->setChecked(false);
+                ui.horizontalSlider_playProgress->setValue(0);
+                ui.horizontalSlider_playProgress->setEnabled(false);
+                ui.horizontalSlider_volume->setEnabled(false);
+                ui.label_totalTime->setText("00:00:00");
+                ui.label_playTime->setText("00:00:00");
+
+                // 检查是否是正常完播（用于播放列表切换）
+                if (!isPlaybackFinished()) {
+                    logger->debug("onPlayStateChanged: Stop is not playback finished, skipping playlist switch");
+                    return;
+                }
+
+                // 根据播放循环设置处理完播后的行为
+                handlePlaybackFinished();
+                break;
+            default:
+                break;
         }
-
-        // 重置 UI 状态
-        ui.pushButton_playPause->setChecked(false);
-        ui.horizontalSlider_playProgress->setValue(0);
-        ui.horizontalSlider_playProgress->setEnabled(false);
-        ui.horizontalSlider_volume->setEnabled(false);
-        ui.label_totalTime->setText("00:00:00");
-        ui.label_playTime->setText("00:00:00");
-
-        // 检查是否是正常完播（用于播放列表切换）
-        if (!isPlaybackFinished()) {
-            logger->debug("onPlayStateChanged: Stop is not playback finished, skipping playlist switch");
-            return;
-        }
-
-        // 根据播放循环设置处理完播后的行为
-        handlePlaybackFinished();
     } catch (const std::exception &e) {
         logger->error("MainWindow::onPlaybackStateChanged: Exception: {}", e.what());
     } catch (...) {
@@ -3600,9 +3620,16 @@ void MainWindow::playNextVideoInList(bool loop)
 // Widget 切换方法实现
 void MainWindow::switchToVideoFile()
 {
+    // 关键修复：先显示 playWidget，再隐藏 cameraWidget，避免布局闪烁
+    if (ui.playWidget) {
+        ui.playWidget->show();
+        ui.playWidget->raise();
+    }
+
     if (cameraWidget_) {
         cameraWidget_->hide();
     }
+
     // 从摄像头切回视频时关闭摄像头，避免摄像头在后台继续运行（BUG 14 完全修复）
     if (cameraManager_) {
         cameraManager_->stopCamera();
@@ -3610,14 +3637,12 @@ void MainWindow::switchToVideoFile()
         if (logger) {
             logger->info("MainWindow: Camera stopped and closed when switching to video file");
         }
-        // 同步菜单状态，使“打开摄像头”变为未勾选
+        // 同步菜单状态，使"打开摄像头"变为未勾选
         if (ui.actionOpenCamera && ui.actionOpenCamera->isChecked()) {
             ui.actionOpenCamera->setChecked(false);
         }
     }
-    if (ui.playWidget) {
-        ui.playWidget->show();
-    }
+
     if (logger) {
         logger->info("MainWindow: Switched to video file widget");
     }
@@ -3625,22 +3650,24 @@ void MainWindow::switchToVideoFile()
 
 void MainWindow::switchToCamera()
 {
+    // 关键修复：先隐藏 playWidget，再显示 cameraWidget，确保布局一致
     if (ui.playWidget) {
         ui.playWidget->hide();
     }
+
     if (cameraWidget_) {
         cameraWidget_->show();
         cameraWidget_->raise(); // 确保在最上层
-        
+
         // 确保 OpenGL 上下文已初始化
         // 如果 widget 还没有被显示过，initializeGL 可能还没有被调用
         // 强制更新以触发 OpenGL 初始化
         cameraWidget_->update();
-        
+
         if (logger) {
-            logger->info("MainWindow: Switched to camera widget (visible: {}, size: {}x{})", 
-                cameraWidget_->isVisible(), 
-                cameraWidget_->width(), 
+            logger->info("MainWindow: Switched to camera widget (visible: {}, size: {}x{})",
+                cameraWidget_->isVisible(),
+                cameraWidget_->width(),
                 cameraWidget_->height());
         }
     } else {
@@ -3963,6 +3990,17 @@ void MainWindow::initHotKey()
         disconnect(shortcut_ResetParallax, &QShortcut::activated, this, &MainWindow::on_actionParallaxReset_triggered);
         shortcut_ResetParallax->setKey(GlobalDef::getInstance()->userWZKeySequence.hotKeyMap.value("OthersTab_ResetParallax"));
     }
+
+    // Camera shortcut (新增，用于摄像头测试)
+    // 使用 Cmd+Shift+C 作为摄像头快捷键
+    if (shortcut_OpenCamera == nullptr) {
+        shortcut_OpenCamera = new QShortcut(QKeySequence("Ctrl+Shift+C"), this);
+    }
+    connect(shortcut_OpenCamera, &QShortcut::activated, this, [this]() {
+        if (ui.actionOpenCamera) {
+            ui.actionOpenCamera->toggle();
+        }
+    });
 
     //======================================================================================================
     //    绑定
