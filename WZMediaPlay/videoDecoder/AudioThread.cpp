@@ -491,6 +491,12 @@ void AudioThread::run()
                     break;
                 }
 
+                // 4.5 检查暂停状态（与 VideoThread 保持一致）
+                // handlePausedState() 只等待 10ms，需要二次检查确保暂停时继续循环
+                if (controller_ && controller_->isPaused()) {
+                    continue;
+                }
+
                 // 5. 计算需要的缓冲区大小
                 if (codecctx_ && frameSize_ > 0 && codecctx_->sample_rate > 0) {
                     // 计算缓冲区大小：采样率 * 时间(秒) * 每样本字节数

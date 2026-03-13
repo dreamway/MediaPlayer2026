@@ -7,5 +7,6 @@ from core.ax_element import AXElement
 from core.app_launcher import AppLauncher
 from core.window_controller import WindowController
 from core.test_base import TestBase
+from core.closed_loop_verifier import ClosedLoopVerifier
 
-__all__ = ['AXElement', 'AppLauncher', 'WindowController', 'TestBase']
+__all__ = ['AXElement', 'AppLauncher', 'WindowController', 'TestBase', 'ClosedLoopVerifier']

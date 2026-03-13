@@ -37,11 +37,11 @@ TEST_VIDEO_BBB_NORMAL_PATH = os.path.join(TEST_VIDEO_DIR, "bbb_sunflower_1080p_3
 TEST_VIDEO_BBB_STEREO_PATH = os.path.join(TEST_VIDEO_DIR, "bbb_sunflower_1080p_30fps_stereo_abl.mp4")
 
 # 黑神话悟空测试视频
-TEST_VIDEO_WUKONG_2D3D_PATH = os.path.join(TEST_VIDEO_DIR, "黑神话悟空2D3D对比宽屏-40S.mp4")
-TEST_VIDEO_WUKONG_4K_PATH = os.path.join(TEST_VIDEO_DIR, "黑神话悟空4K-40S.mp4")
+TEST_VIDEO_WUKONG_2D3D_PATH = os.path.join(TEST_VIDEO_DIR, "wukong_2D3D-40S.mp4")
+TEST_VIDEO_WUKONG_4K_PATH = os.path.join(TEST_VIDEO_DIR, "wukong4K-40S.mp4")
 
 # 医疗3D演示视频
-TEST_VIDEO_MEDICAL_3D_PATH = os.path.join(TEST_VIDEO_DIR, "医疗3D演示4k5-2.mp4")
+TEST_VIDEO_MEDICAL_3D_PATH = os.path.join(TEST_VIDEO_DIR, "Medical3D4k5-2.mp4")
 
 # 默认测试视频列表
 DEFAULT_TEST_VIDEOS = [

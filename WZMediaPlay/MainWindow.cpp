@@ -13,6 +13,7 @@
 #include "videoDecoder/RendererFactory.h"
 #include "camera/CameraOpenGLWidget.hpp"
 #include <QVBoxLayout>
+#include <QAccessible>  // 用于 Accessibility 更新
 #include "spdlog/sinks/basic_file_sink.h"
 #include "spdlog/sinks/rotating_file_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
@@ -1419,20 +1420,26 @@ int MainWindow::openPath(QString path, bool addPlayList)
     //  set TotalTime
     int64_t mvTotalTimeMs = playController_->getDurationMs();
     int mvTotalTimeSecond = static_cast<int>(mvTotalTimeMs / 1000);
-    
+
+    logger->info("openPath: getDurationMs() returned {} ms ({} seconds)", mvTotalTimeMs, mvTotalTimeSecond);
+
     // 如果时长为0，可能是还没有正确获取，使用延迟设置
     if (mvTotalTimeSecond <= 0) {
         logger->warn("openPath: Video duration is 0 or negative ({} ms), will retry later", mvTotalTimeMs);
         // 使用一个临时值，稍后会在 onUpdatePlayProcess 中更新
         mvTotalTimeSecond = 1; // 至少设置为1秒，避免进度条异常
     }
-    
+
     int totalHour = mvTotalTimeSecond / 3600;
     int totalMinute = (mvTotalTimeSecond - totalHour * 3600) / 60;
     int totalSecond = mvTotalTimeSecond % 60;
     QString strTotalTime
         = QString("%1:%2:%3").arg(totalHour, 2, 10, QLatin1Char('0')).arg(totalMinute, 2, 10, QLatin1Char('0')).arg(totalSecond, 2, 10, QLatin1Char('0'));
     ui.label_totalTime->setText(strTotalTime);
+    // 手动触发 Accessibility 更新，确保 macOS Accessibility API 能读取到最新值
+    QAccessibleEvent event(ui.label_totalTime, QAccessible::Event::ValueChanged);
+    QAccessible::updateAccessibility(&event);
+    logger->info("openPath: Set label_totalTime to '{}'", strTotalTime.toStdString());
     //  set play progress bar（BUG-019：切换视频后进度条与当前时间必须重置为 0）
     ui.horizontalSlider_playProgress->setMaximum(mvTotalTimeSecond);
     ui.horizontalSlider_playProgress->setSingleStep(1);
@@ -1809,17 +1816,23 @@ void MainWindow::on_pushButton_stop_clicked()
 
 void MainWindow::on_pushButton_previous_clicked()
 {
+    logger->info("on_pushButton_previous_clicked: triggered");
     if (ui.tabWidget_playList->currentIndex() == 0) {
         int index = ui.listWidget_playlist->row(ui.listWidget_playlist->currentItem());
+        logger->info("on_pushButton_previous_clicked: currentItem index={}, listWidget count={}", index, ui.listWidget_playlist->count());
         index = (index - 1) < 0 ? 0 : (index - 1);
         ui.listWidget_playlist->setCurrentItem(ui.listWidget_playlist->item(index));
         // GlobalDef::getInstance()->PLAY_LIST_DATA.playlist_current_video = index;
         if (index >= 0) {
-            QString mvPath = GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[0].video_list[index].video_path;
-            logger->debug(" current path:{}", mvPath.toUtf8().constData());
-            openPath(mvPath, false);
+            if (index < GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[0].video_list.size()) {
+                QString mvPath = GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[0].video_list[index].video_path;
+                logger->info("on_pushButton_previous_clicked: opening video at index {}: {}", index, mvPath.toUtf8().constData());
+                openPath(mvPath, false);
+            } else {
+                logger->warn("on_pushButton_previous_clicked: index {} out of range (video_list size={})", index, GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[0].video_list.size());
+            }
         } else {
-            logger->debug(" current index: {}", index);
+            logger->warn("on_pushButton_previous_clicked: invalid index {}", index);
         }
     } else {
         int index = ((PlayListPage *) ui.tabWidget_playList->currentWidget())
@@ -1879,17 +1892,23 @@ void MainWindow::on_pushButton_playPause_clicked()
 
 void MainWindow::on_pushButton_next_clicked()
 {
+    logger->info("on_pushButton_next_clicked: triggered");
     if (ui.tabWidget_playList->currentIndex() == 0) {
         int index = ui.listWidget_playlist->row(ui.listWidget_playlist->currentItem());
+        logger->info("on_pushButton_next_clicked: currentItem index={}, listWidget count={}", index, ui.listWidget_playlist->count());
         index = (index + 1) > (ui.listWidget_playlist->count() - 1) ? (ui.listWidget_playlist->count() - 1) : (index + 1);
         ui.listWidget_playlist->setCurrentItem(ui.listWidget_playlist->item(index));
         // GlobalDef::getInstance()->PLAY_LIST_DATA.playlist_current_video = index;
         if (index >= 0) {
-            QString mvPath = GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[0].video_list[index].video_path;
-            logger->debug(" current path:{} ", mvPath.toUtf8().constData());
-            openPath(mvPath, false);
+            if (index < GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[0].video_list.size()) {
+                QString mvPath = GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[0].video_list[index].video_path;
+                logger->info("on_pushButton_next_clicked: opening video at index {}: {}", index, mvPath.toUtf8().constData());
+                openPath(mvPath, false);
+            } else {
+                logger->warn("on_pushButton_next_clicked: index {} out of range (video_list size={})", index, GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[0].video_list.size());
+            }
         } else {
-            logger->debug(" current index:{}", index);
+            logger->warn("on_pushButton_next_clicked: invalid index {}", index);
         }
     } else {
         int index = ((PlayListPage *) ui.tabWidget_playList->currentWidget())
@@ -3365,11 +3384,21 @@ void MainWindow::onPlaybackStateChanged(PlaybackState state)
         switch (state) {
             case PlaybackState::Playing:
                 ui.pushButton_playPause->setChecked(true);
+                // 确保进度条在播放时启用（防止因 Stopped 状态被禁用后未恢复）
+                ui.horizontalSlider_playProgress->setEnabled(true);
+                ui.horizontalSlider_volume->setEnabled(true);
                 break;
             case PlaybackState::Paused:
                 ui.pushButton_playPause->setChecked(false);
                 break;
             case PlaybackState::Stopped:
+                // 仅在真正停止（非切换视频）时重置 UI
+                // 检查是否是正常完播（用于播放列表切换）
+                if (!isPlaybackFinished()) {
+                    logger->debug("onPlayStateChanged: Stop is not playback finished, skipping UI reset");
+                    return;
+                }
+
                 // 清除上一次播放视频关联的 Subtitle 文件
                 mLastMovieFn = mCurMovieFilename;
                 if (!GlobalDef::getInstance()->USER_SELECTED_SUBTITLE_FILENAME.isEmpty()) {
@@ -3386,12 +3415,6 @@ void MainWindow::onPlaybackStateChanged(PlaybackState state)
                 ui.horizontalSlider_volume->setEnabled(false);
                 ui.label_totalTime->setText("00:00:00");
                 ui.label_playTime->setText("00:00:00");
-
-                // 检查是否是正常完播（用于播放列表切换）
-                if (!isPlaybackFinished()) {
-                    logger->debug("onPlayStateChanged: Stop is not playback finished, skipping playlist switch");
-                    return;
-                }
 
                 // 根据播放循环设置处理完播后的行为
                 handlePlaybackFinished();

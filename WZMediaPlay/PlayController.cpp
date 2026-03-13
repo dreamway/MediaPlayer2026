@@ -1131,8 +1131,8 @@ bool PlayController::seek(int64_t positionMs)
     // 1. 先调用requestSeek()设置seekPositionUs_，避免竞态条件
     // 这样可以避免DemuxerThread在run()循环中读取到旧的seekPositionUs_（0）
     try {
-        demuxThread_->requestSeek(positionUs, false); // 先设置seek参数，不执行seek
-        SPDLOG_LOGGER_DEBUG(logger, "PlayController::seek: requestSeek called with positionUs={}", positionUs);
+        demuxThread_->requestSeek(positionUs, backward); // 使用计算好的backward参数
+        SPDLOG_LOGGER_DEBUG(logger, "PlayController::seek: requestSeek called with positionUs={}, backward={}", positionUs, backward);
     } catch (const std::exception &e) {
         SPDLOG_LOGGER_ERROR(logger, "PlayController::seek: Exception while requesting seek: {}", e.what());
         return false;

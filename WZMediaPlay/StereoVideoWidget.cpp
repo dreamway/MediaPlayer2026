@@ -879,6 +879,12 @@ void StereoVideoWidget::OnUpdateStatusTimer()
         return;
     }
 
+    // 检查是否暂停（避免在暂停时更新进度，防止UI显示变化的时间）
+    if (playController_ && playController_->isPaused()) {
+        // 暂停中，跳过进度更新
+        return;
+    }
+
     int64_t currentPositionMs = playController_->getCurrentPositionMs();
     // 验证返回值是否有效（避免负数或过大值导致UI错误）
     if (currentPositionMs < 0) {

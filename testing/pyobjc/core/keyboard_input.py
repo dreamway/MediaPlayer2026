@@ -16,7 +16,40 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 class KeyboardInput:
     """macOS 键盘输入模拟"""
 
-    # 特殊键映射
+    # 特殊键映射到 AppleScript key code
+    # 参考: https://eastmanreference.com/complete-list-of-applescript-key-codes
+    KEY_CODES = {
+        'enter': 36,
+        'return': 36,
+        'space': 49,
+        'tab': 48,
+        'escape': 53,
+        'esc': 53,
+        'backspace': 51,
+        'delete': 117,  # forward delete
+        'up': 126,
+        'down': 125,
+        'left': 123,
+        'right': 124,
+        'home': 115,
+        'end': 119,
+        'pageup': 116,
+        'pagedown': 121,
+        'f1': 122,
+        'f2': 120,
+        'f3': 99,
+        'f4': 118,
+        'f5': 96,
+        'f6': 97,
+        'f7': 98,
+        'f8': 100,
+        'f9': 101,
+        'f10': 109,
+        'f11': 103,
+        'f12': 111,
+    }
+
+    # 特殊键映射 (用于 keystroke 命令，仅用于非 key code 的情况)
     SPECIAL_KEYS = {
         'enter': 'return',
         'space': 'space',
@@ -76,20 +109,29 @@ class KeyboardInput:
             delay: 按键后延迟
         """
         modifiers = modifiers or []
+        key_lower = key.lower()
 
-        # 构建按键脚本
-        key_str = KeyboardInput.SPECIAL_KEYS.get(key.lower(), key)
+        # 检查是否是特殊键（使用 key code）
+        if key_lower in KeyboardInput.KEY_CODES:
+            key_code = KeyboardInput.KEY_CODES[key_lower]
 
-        # 构建修饰键
-        mod_str = ''
-        if modifiers:
-            mod_str = ' using {' + ', '.join(f'{m} down' for m in modifiers) + '}'
+            # 构建修饰键
+            mod_str = ''
+            if modifiers:
+                mod_str = ' using {' + ', '.join(f'{m} down' for m in modifiers) + '}'
 
-        script = f'''
-        tell application "System Events"
-            keystroke "{key_str}"{mod_str}
-        end tell
-        '''
+            script = f'''
+            tell application "System Events"
+                key code {key_code}{mod_str}
+            end tell
+            '''
+        else:
+            # 普通字符使用 keystroke
+            script = f'''
+            tell application "System Events"
+                keystroke "{key}"
+            end tell
+            '''
 
         try:
             KeyboardInput.focus_app()
@@ -185,6 +227,16 @@ class KeyboardInput:
         KeyboardInput.send_key('m', delay=0.2)
 
     @staticmethod
+    def play_next_video():
+        """播放下一个视频 (Page Down)"""
+        KeyboardInput.send_key('pagedown', delay=0.5)
+
+    @staticmethod
+    def play_previous_video():
+        """播放上一个视频 (Page Up)"""
+        KeyboardInput.send_key('pageup', delay=0.5)
+
+    @staticmethod
     def toggle_camera():
         """切换摄像头 (Ctrl+Shift+C)"""
         KeyboardInput.send_hotkey('c', ['command', 'shift'], delay=0.5)
@@ -211,35 +263,44 @@ class KeyboardInput:
         filename = os.path.basename(video_path)
 
         # 使用 AppleScript 打开文件对话框并选择文件
+        # 注意：需要确保对话框完全关闭，否则焦点会停留在 Finder
         script = f'''
         tell application "System Events"
             -- 激活 WZMediaPlayer
             set frontmost of process "WZMediaPlayer" to true
-            delay 0.3
+            delay 0.5
 
             -- 打开文件对话框 (Cmd+O)
             keystroke "o" using command down
-            delay 1.0
+            delay 1.5
 
             -- 输入路径 (Cmd+Shift+G 进入"前往文件夹")
             keystroke "g" using {{command down, shift down}}
-            delay 0.5
+            delay 0.8
 
             -- 输入完整路径
             keystroke "{video_path}"
-            delay 0.3
+            delay 0.5
 
             -- 按 Enter 确认路径
             keystroke return
+            delay 0.8
+
+            -- 再按 Enter 打开文件（确认文件选择对话框）
+            keystroke return
             delay 0.5
 
-            -- 再按 Enter 打开文件
-            keystroke return
+            -- 确保对话框关闭：如果还有对话框，按 Escape 关闭
+            keystroke "escape"
+            delay 0.2
+
+            -- 最后确保 WZMediaPlayer 有焦点
+            set frontmost of process "WZMediaPlayer" to true
         end tell
         '''
 
         try:
-            subprocess.run(['osascript', '-e', script], check=True, timeout=15)
+            subprocess.run(['osascript', '-e', script], check=True, timeout=20)
             time.sleep(delay)
         except subprocess.TimeoutExpired:
             print(f"Warning: Open video file timed out: {video_path}")
