@@ -301,7 +301,12 @@ bool VideoThread::decodeFrame(Frame &videoFrame, int &bytesConsumed, AVPixelForm
             wasSeekingRecently_ = false;
             SPDLOG_LOGGER_WARN(logger, "VideoThread::decodeFrame: Timeout waiting for keyframe after seeking ({}ms), stopping keyframe wait", elapsedMs);
         } else {
-            SPDLOG_LOGGER_DEBUG(logger, "VideoThread::decodeFrame: Skipping non-keyframe after seeking (wasSeekingRecently_=true, elapsed={}ms)", elapsedMs);
+            // BUG-046 诊断：记录非关键帧跳过
+            static int skipNonKeyframeCount = 0;
+            if (++skipNonKeyframeCount % 50 == 1) {  // 每50次记录一次
+                SPDLOG_LOGGER_WARN(logger, "VideoThread::decodeFrame: Skipping non-keyframe after seeking (count={}, elapsed={}ms, wasSeekingRecently_={})",
+                    skipNonKeyframeCount, elapsedMs, wasSeekingRecently_);
+            }
             vPackets_->popPacket("VideoQueue");
             videoFrame.clear();
             return false; // 跳过，继续下一个数据包
@@ -600,6 +605,12 @@ QImage VideoThread::frameToQImage(const Frame &videoFrame)
 bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
 {
     if (videoFrame.isEmpty()) {
+        // BUG-046 诊断：记录帧为空的原因
+        static int emptyFrameCount = 0;
+        if (++emptyFrameCount % 100 == 1) {  // 每100次记录一次，避免日志过多
+            SPDLOG_LOGGER_WARN(logger, "VideoThread::renderFrame: videoFrame.isEmpty() (count={}), isSeeking={}, wasSeekingRecently_={}",
+                emptyFrameCount, controller_ ? controller_->isSeeking() : -1, wasSeekingRecently_);
+        }
         return false;
     }
 
@@ -631,6 +642,12 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
 
     // 检查 seeking 状态
     if (controller_->isSeeking()) {
+        // BUG-046 诊断：记录 seeking 状态卡住
+        static int seekingStuckCount = 0;
+        if (++seekingStuckCount % 100 == 1) {  // 每100次记录一次
+            SPDLOG_LOGGER_WARN(logger, "VideoThread::renderFrame: Still in seeking state (count={}), stateMachine state={}",
+                seekingStuckCount, static_cast<int>(controller_->getStateMachine().getState()));
+        }
         videoFrame.clear();
         return false;
     }
@@ -669,7 +686,12 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
     // 获取视频帧时间戳
     nanoseconds framePts = videoFrame.ts();
     if (!isValidTimestamp(framePts)) {
-        // 无效的PTS，跳过帧
+        // BUG-046 诊断：记录无效时间戳
+        static int invalidPtsCount = 0;
+        if (++invalidPtsCount % 100 == 1) {
+            SPDLOG_LOGGER_WARN(logger, "VideoThread::renderFrame: Invalid timestamp (count={}), framePts={}",
+                invalidPtsCount, framePts.count());
+        }
         return false;
     }
 
@@ -830,11 +852,16 @@ bool VideoThread::renderFrame(Frame &videoFrame, int &frames)
     } else if (diff > controller_->getMaxSyncThreshold() * 2) {
         // 极端情况：视频超前太多（超过 2 倍最大阈值），跳过帧
         consecutiveSkipCount_++;
-        if (logger) {
-            logger->debug(
-                "VideoThread::renderFrame: Skipping frame due to extreme advance ({} ms > {} ms)",
+
+        // BUG-046 诊断：记录跳帧原因
+        if (consecutiveSkipCount_ % 50 == 1) {  // 每50次跳帧记录一次
+            SPDLOG_LOGGER_WARN(logger,
+                "VideoThread::renderFrame: Skipping frame due to video ahead (count={}, diff={}ms, threshold={}ms, masterClock={}ms, framePts={}ms)",
+                consecutiveSkipCount_,
                 std::chrono::duration_cast<milliseconds>(diff).count(),
-                std::chrono::duration_cast<milliseconds>(controller_->getMaxSyncThreshold() * 2).count());
+                std::chrono::duration_cast<milliseconds>(controller_->getMaxSyncThreshold() * 2).count(),
+                std::chrono::duration_cast<milliseconds>(masterClock).count(),
+                std::chrono::duration_cast<milliseconds>(framePts).count());
         }
 
         // 保存为上一帧（避免黑屏）
@@ -1179,7 +1206,15 @@ void VideoThread::run()
                     // renderFrame失败（可能是同步跳帧），记录但继续
                     static int renderFailCount = 0;
                     if (++renderFailCount % 100 == 0) {
-                        SPDLOG_LOGGER_WARN(logger, "VideoThread::run: renderFrame failed {} times", renderFailCount);
+                        // BUG-046 诊断：添加更多上下文信息
+                        SPDLOG_LOGGER_WARN(logger,
+                            "VideoThread::run: renderFrame failed {} times (isSeeking={}, wasSeekingRecently_={}, framesAfterSeek_={}, queueSize={}, frames={})",
+                            renderFailCount,
+                            controller_ ? controller_->isSeeking() : -1,
+                            wasSeekingRecently_,
+                            framesAfterSeek_,
+                            vPackets_ ? vPackets_->Size() : 0,
+                            frames);
                     }
                     continue;
                 }

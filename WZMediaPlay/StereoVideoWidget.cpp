@@ -4,7 +4,7 @@
 */
 
 #include "StereoVideoWidget.h"
-#include "gui/FloatButton.h"
+// BUG-045: FloatButton 已移除，播放列表按钮已移至 MainWindow 底部控制栏
 #include "gui/FullscreenTipsWidget.h"
 #include "PlayController.h"
 #include "ShaderManager.h"
@@ -282,13 +282,7 @@ void StereoVideoWidget::initializeUIComponents()
      * - 加载配置（FPS显示）
      */
 
-    // FloatButton：播放列表显示按钮
-    // - 初始状态：隐藏（进入窗口时显示）
-    // - 功能：点击触发播放列表显示/隐藏
-    if (!butWidget) {
-        butWidget = new FloatButton(this);
-        butWidget->hide();
-    }
+    // BUG-045: FloatButton 已移除，播放列表按钮已移至 MainWindow 底部控制栏
 
     // mWindowLogo：播放窗口Logo标签
     // - 初始状态：隐藏
@@ -334,11 +328,7 @@ void StereoVideoWidget::setupUIComponentsLayout()
      * - 顶层组件会覆盖底层组件
      */
 
-    // FloatButton 应该在顶层（z-order 最高）
-    // - 原因：需要快速访问播放列表按钮
-    if (butWidget) {
-        butWidget->raise();
-    }
+    // BUG-045: FloatButton 已移除
 
     // SubtitleWidget 应该在视频上方
     // - 原因：字幕需要覆盖在视频上方，但不能覆盖其他UI组件
@@ -377,19 +367,13 @@ void StereoVideoWidget::keyPressEvent(QKeyEvent *event)
 void StereoVideoWidget::enterEvent(QEnterEvent *e)
 {
     QWidget::enterEvent(e);
-    // 显示 UI 组件
-    if (butWidget) {
-        butWidget->show();
-    }
+    // BUG-045: FloatButton 已移除，不再需要显示/隐藏逻辑
 }
 
 void StereoVideoWidget::leaveEvent(QEvent *e)
 {
     QWidget::leaveEvent(e);
-    // 隐藏 UI 组件
-    if (butWidget) {
-        butWidget->hide();
-    }
+    // BUG-045: FloatButton 已移除，不再需要显示/隐藏逻辑
 }
 
 void StereoVideoWidget::moveEvent(QMoveEvent *event)
@@ -409,12 +393,7 @@ void StereoVideoWidget::resizeEvent(QResizeEvent *e)
      * 注意：OpenGL widget由布局管理，会自动调整大小，不需要手动设置
      */
 
-    // FloatButton 位置：右侧中间
-    // - X坐标：窗口宽度 - 按钮宽度
-    // - Y坐标：(窗口高度 - 按钮高度) / 2
-    if (butWidget) {
-        butWidget->move((width() - butWidget->width()), (height() - butWidget->height()) / 2);
-    }
+    // BUG-045: FloatButton 已移除，播放列表按钮已移至 MainWindow 底部控制栏
 
     // SubtitleWidget 位置：底部
     // - X坐标：0（左对齐）
@@ -488,6 +467,10 @@ int StereoVideoWidget::StartRendering(StereoFormat stereoFormat, StereoInputForm
     // 启动状态更新定时器（用于更新进度条等UI）
     if (statusUpdateTimer_) {
         statusUpdateTimer_->start(100); // 100ms 更新一次状态（更频繁的更新，确保进度条同步）
+        if (logger) {
+            logger->info("StartRendering: statusUpdateTimer_ started with 100ms interval, currentRenderInputSource_={}, playController_={}",
+                int(currentRenderInputSource_), (void*)playController_);
+        }
     }
 
     // 根据渲染输入源决定是否启动 renderTimer_
@@ -875,6 +858,12 @@ void StereoVideoWidget::OnUpdateStatusTimer()
     // 更新播放状态和进度（仅对视频文件模式）
     if (currentRenderInputSource_ != RenderInputSource::RIS_VIDEO_FILE) {
         // Camera 模式不需要更新播放进度
+        if (logger) {
+            static int logCounter = 0;
+            if (logCounter++ % 100 == 0) {
+                logger->debug("OnUpdateStatusTimer: Early return - not VIDEO_FILE (source={})", int(currentRenderInputSource_));
+            }
+        }
         return;
     }
 
@@ -901,13 +890,34 @@ void StereoVideoWidget::OnUpdateStatusTimer()
     // 检查是否正在 Seeking（避免在 Seeking 时更新进度）
     if (playController_ && playController_->isSeeking()) {
         // 正在seeking，跳过进度更新
+        if (logger) {
+            static int logCounter = 0;
+            if (logCounter++ % 100 == 0) {
+                logger->debug("OnUpdateStatusTimer: Early return - seeking");
+            }
+        }
         return;
     }
 
     // 检查是否暂停（避免在暂停时更新进度，防止UI显示变化的时间）
     if (playController_ && playController_->isPaused()) {
         // 暂停中，跳过进度更新
+        if (logger) {
+            static int logCounter = 0;
+            if (logCounter++ % 100 == 0) {
+                logger->debug("OnUpdateStatusTimer: Early return - paused");
+            }
+        }
         return;
+    }
+
+    // BUG-042 诊断：记录每次定时器调用的状态
+    if (logger) {
+        static int callCounter = 0;
+        if (callCounter++ % 50 == 0) {  // 每5秒记录一次
+            logger->info("OnUpdateStatusTimer: Timer active, isRendering_={}, isOpened={}, isPaused={}, isSeeking={}",
+                isRendering_, playController_->isOpened(), playController_->isPaused(), playController_->isSeeking());
+        }
     }
 
     int64_t currentPositionMs = playController_->getCurrentPositionMs();
@@ -945,12 +955,22 @@ void StereoVideoWidget::OnUpdateStatusTimer()
 
 void StereoVideoWidget::onPlaybackStateChanged(PlaybackState state)
 {
+    // BUG-042 诊断：记录状态变化
+    if (logger) {
+        logger->info("StereoVideoWidget::onPlaybackStateChanged: state={} (Playing={}, Paused={}, Stopped={}, Seeking={})",
+            int(state),
+            state == PlaybackState::Playing ? "YES" : "NO",
+            state == PlaybackState::Paused ? "YES" : "NO",
+            state == PlaybackState::Stopped ? "YES" : "NO",
+            state == PlaybackState::Seeking ? "YES" : "NO");
+    }
+
     // BUG-038 修复：当播放状态变为 Playing 时，重置位置跟踪
     // 这确保了当切换到新视频时，进度条位置从头开始
     if (state == PlaybackState::Playing) {
         resetPositionTracking();
         if (logger) {
-            logger->debug("StereoVideoWidget::onPlaybackStateChanged: Reset position tracking for new playback");
+            logger->info("StereoVideoWidget::onPlaybackStateChanged: Reset position tracking for new playback, lastPositionSeconds_={}", lastPositionSeconds_);
         }
     }
 

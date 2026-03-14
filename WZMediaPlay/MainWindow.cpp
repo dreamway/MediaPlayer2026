@@ -4,7 +4,7 @@
 #include "test_support/TestPipeServer.h"
 #include "camera/CameraManager.h"
 #include "gui/DrawWidget.h"
-#include "gui/FloatButton.h"
+// BUG-045: FloatButton 已移除，播放列表按钮已移至底部控制栏
 #include "GlobalDef.h"
 #include "PlayController.h"
 #include "playlist/PlayListPage.h"
@@ -893,7 +893,10 @@ void MainWindow::initUI()
     ui.horizontalSlider_volume->setValue(GlobalDef::getInstance()->VOLUME_VAULE);
 
     //  play list
-    connect(ui.playWidget->butWidget, &FloatButton::signals_playListShow_clicked, this, &MainWindow::reply_playlistShowBut_Clicked);
+    // BUG-045: 移除 FloatButton 连接，改用底部控制栏的 pushButton_playlist
+    // connect(ui.playWidget->butWidget, &FloatButton::signals_playListShow_clicked, this, &MainWindow::reply_playlistShowBut_Clicked);
+    // 初始化播放列表按钮状态：默认显示播放列表
+    ui.pushButton_playlist->setChecked(true);
     ((QTabBar *) (ui.tabWidget_playList->tabBar()))->setTabButton(ui.tabWidget_playList->indexOf(ui.tab_playListDef), QTabBar::RightSide, NULL);
     drawPlayList();
     ui.tabWidget_playList->setCurrentIndex(GlobalDef::getInstance()->PLAY_LIST_DATA.playlist_current_index);
@@ -1700,6 +1703,8 @@ void MainWindow::on_pushButton_fullScreen_clicked()
 
             if (!ui.widget_playList->isHidden()) {
                 ui.widget_playList->hide();
+                // BUG-045: 同步播放列表按钮状态
+                ui.pushButton_playlist->setChecked(false);
             }
 
             ui.verticalLayout_4->removeWidget(ui.widget_playControl);
@@ -1707,6 +1712,11 @@ void MainWindow::on_pushButton_fullScreen_clicked()
             ui.widget_playControl->move(0, screenGeometry.height() - ui.widget_playControl->height());
             // ui.widget_playControl->hide();
             mWindowSizeState = WINDOW_FULLSCREEN;
+
+            // 全屏提示：显示 "Fullscreen" 提示
+            if (ui.playWidget) {
+                ui.playWidget->SetFullscreenMode(FullscreenMode::FULLSCREEN_KEEP_RATIO);
+            }
 
             // 把当前窗口置在TopLevel Highest
 #ifdef Q_OS_WIN
@@ -1757,6 +1767,8 @@ void MainWindow::on_pushButton_fullScreen_clicked()
 
             if (!ui.widget_playList->isHidden()) {
                 ui.widget_playList->hide();
+                // BUG-045: 同步播放列表按钮状态
+                ui.pushButton_playlist->setChecked(false);
             }
 
             ui.verticalLayout_4->removeWidget(ui.widget_playControl);
@@ -1764,6 +1776,11 @@ void MainWindow::on_pushButton_fullScreen_clicked()
             ui.widget_playControl->move(0, screenGeometry.height() - ui.widget_playControl->height());
             // ui.widget_playControl->hide();
             mWindowSizeState = WINDOW_FULLSCREEN;
+
+            // 全屏提示：显示 "Fullscreen" 提示
+            if (ui.playWidget) {
+                ui.playWidget->SetFullscreenMode(FullscreenMode::FULLSCREEN_KEEP_RATIO);
+            }
 
             // 把当前窗口置在TopLevel Highest
 #ifdef Q_OS_WIN
@@ -2983,9 +3000,22 @@ void MainWindow::on_tabWidget_playList_tabCloseRequested(int index)
 
 void MainWindow::reply_playlistShowBut_Clicked()
 {
+    // BUG-045: 同步播放列表按钮状态
     if (ui.widget_playList->isHidden()) {
         ui.widget_playList->show();
-        // ui.widget_playView->setCurrentIndex(0);
+        ui.pushButton_playlist->setChecked(true);
+    } else {
+        ui.widget_playList->hide();
+        ui.pushButton_playlist->setChecked(false);
+    }
+}
+
+void MainWindow::on_pushButton_playlist_clicked()
+{
+    // BUG-045: 使用底部控制栏的播放列表按钮替代 FloatButton
+    // 按钮是 checkable 的，根据选中状态切换播放列表可见性
+    if (ui.pushButton_playlist->isChecked()) {
+        ui.widget_playList->show();
     } else {
         ui.widget_playList->hide();
     }

@@ -1,7 +1,7 @@
 # WZMediaPlayer 完整 Bug 登记表
 
 **日期**: 2026-03-12
-**最后更新**: 2026-03-13
+**最后更新**: 2026-03-14
 **基于**: docs/ 全部 63 个文档 + 源码 Code Review
 **维护者**: Cursor Cloud Agent
 
@@ -12,9 +12,9 @@
 | 状态 | 数量 |
 |------|------|
 | ✅ 已修复且已验证 | 29 |
-| ✅ 已修复待验证 | 5 |
-| ✅ 不是 BUG（代码已正确实现） | 0 |
-| 📋 已知问题（低优先级） | 1 |
+| ✅ 已修复待验证 | 7 |
+| 🟡 待修复 | 3 |
+| 📋 已知问题（低优先级） | 2 |
 
 ---
 
@@ -25,6 +25,11 @@
 | BUG-039 | 停止播放后画面和UI状态未重置 | P1 | 🟡 修复中 | 2026-03-13 |
 | BUG-040 | Seeking 时线程竞争导致崩溃 | P0 | 🟡 修复中 | 2026-03-13 |
 | BUG-041 | 暂停时大量日志输出导致性能问题 | P2 | 🟡 修复中 | 2026-03-13 |
+| BUG-042 | macOS 停止时 Logo 未显示 | P1 | ✅ 已修复待验证 | 2026-03-13 |
+| BUG-043 | DrawWidget 底图显示灰白而非 ONLY_LEFT 图像 | P1 | 🟡 调查中 | 2026-03-13 |
+| BUG-044 | 播放列表双击后进度条不更新 | P0 | ✅ 已修复待验证 | 2026-03-14 |
+| BUG-045 | FloatButton 效果不好，建议添加列表图标 | P2 | 📋 设计改进 | 2026-03-13 |
+| BUG-046 | 快速连续 Seeking 导致视频卡住但音频继续 | P0 | 🔴 调查中 | 2026-03-13 |
 
 ---
 
@@ -61,6 +66,61 @@
 | **修复文件** | `WZMediaPlay/videoDecoder/VideoThread.cpp` |
 | **优先级** | P2 |
 | **状态** | 🟡 修复中（代码已修改，待测试验证） |
+
+### BUG-042: macOS 停止时 Logo 未显示
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | macOS 中点击停止按钮后，mWindowLogo 未显示出来 |
+| **根因** | `SystemConfig.ini` 中配置的 `MainWindowLogoPath=./Resources/logo/MWlg.png`，但 `MWlg.png` 文件不存在 |
+| **修复内容** | 将 `MainWindowLogoPath` 改为 `./Resources/logo/PWlg.png`（已存在的文件） |
+| **修复文件** | `WZMediaPlay/config/SystemConfig.ini` |
+| **优先级** | P1 |
+| **状态** | ✅ 已修复待验证 |
+
+### BUG-043: DrawWidget 底图显示灰白而非 ONLY_LEFT 图像
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 使用 Ctrl+9 唤醒 DrawWidget 时，底图不是真实视频的 ONLY_LEFT 图像，而是一个灰白的图像 |
+| **预期** | 底图应该是 3D 视频的左视图（ONLY_LEFT 模式） |
+| **根因分析** | 初步分析：1. `SetStereoOutputFormat(ONLY_LEFT)` 调用后 `repaint()` 触发重绘<br>2. 但 `paintGLStereo()` 可能因为 `frameIsEmpty` 返回早期分支<br>3. 灰白色可能来自 OpenGL 初始化状态或 DrawWidget 的绘制背景 |
+| **修复方向** | 需要调查：1. 确保格式切换后立即使用当前帧重新渲染<br>2. 检查 `hasImage` 状态在格式切换时是否正确 |
+| **修复文件** | `WZMediaPlay/MainWindow.cpp`, `WZMediaPlay/videoDecoder/opengl/StereoOpenGLCommon.cpp` |
+| **优先级** | P1 |
+| **状态** | 🟡 调查中 |
+
+### BUG-044: 播放列表双击后进度条不更新
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 1. 刚启动时，手动双击视频列表中的视频，视频播放但其进度条等状态无变化<br>2. 播放过程中双击下一个视频，进度条归零后不再更新 |
+| **根因** | `PlayController::open()` 在转换到 `Playing` 状态后未启动 `masterClock_`，导致 `getMasterClock()` 返回 `nanoseconds::zero()`，`getCurrentPositionMs()` 返回 0，进度条不更新 |
+| **修复内容** | 在 `open()` 中转换到 `Playing` 状态后添加 `masterClock_->start()` 调用 |
+| **修复文件** | `WZMediaPlay/PlayController.cpp` |
+| **优先级** | P0 |
+| **状态** | ✅ 已修复待验证 |
+
+### BUG-045: FloatButton 效果不好
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | FloatButton 的效果不理想，建议在底栏右侧（控制 LR/RL/UD 的那部分）再加一个"列表"图标，用于播放列表切换 |
+| **建议** | 在控制栏右侧添加列表图标按钮，替代或补充现有的 FloatButton |
+| **优先级** | P2 |
+| **状态** | 📋 设计改进 |
+
+### BUG-046: 快速连续 Seeking 导致视频卡住但音频继续
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 快速连续拖动进度条 Seeking 时，视频画面卡在某一帧不再刷新，但音频继续正常播放 |
+| **日志** | `[VideoThread.cpp:1182][warning] : VideoThread::run: renderFrame failed 100 times` |
+| **根因分析** | 调查中。已添加诊断日志，初步排除状态机卡在 Seeking 的情况。可能原因：<br>1. 视频帧解码速度跟不上快速 seek 请求<br>2. 4K 视频解码压力大，在快速 seek 时更容易触发问题<br>3. 音视频时钟同步问题 |
+| **复现条件** | 使用 wukong4K-40S.mp4 等高分辨率视频，快速连续拖动进度条 |
+| **修复文件** | `WZMediaPlay/videoDecoder/VideoThread.cpp`, `WZMediaPlay/PlayController.cpp`, `WZMediaPlay/PlaybackStateMachine.cpp` |
+| **优先级** | P0 |
+| **状态** | 🔴 待修复（调查中，暂缓） |
 
 ---
 

@@ -380,6 +380,13 @@ bool PlayController::open(const QString &filename)
     // 转换到Playing状态
     stateMachine_.transitionTo(PlaybackState::Playing, "Starting playback");
 
+    // BUG-044 修复：启动 AVClock，确保 getCurrentPositionMs() 返回有效值
+    // 如果不启动时钟，getMasterClock() 会返回 zero()，导致进度条不更新
+    if (masterClock_) {
+        masterClock_->start();
+        SPDLOG_LOGGER_INFO(logger, "PlayController::open: masterClock started");
+    }
+
     // 同步时钟基准：确保音频和视频时钟从同一时间开始
     // 这有助于减少播放开始时的同步误差
     lastVideoFrameTime_ = std::chrono::steady_clock::now();

@@ -148,6 +148,7 @@ private slots:
     //Volume
     void onVolumeValueChanged(int value);
     void on_pushButton_volume_clicked();
+    void on_pushButton_playlist_clicked();
     void replyVolumeUp();
     void replyVolumeDown();
     void replyVolumeMute();

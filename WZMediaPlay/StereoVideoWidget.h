@@ -30,8 +30,8 @@
 class PlayController;
 class FullscreenTipsWidget;
 class SubtitleWidget;
-class FloatButton;
 // 注意：CameraOpenGLWidget 现在由 MainWindow 管理，不再需要前向声明
+// BUG-045: FloatButton 已移除，改用 MainWindow 底部控制栏的播放列表按钮
 
 /**
  * StereoVideoWidget: 视频显示控件
@@ -39,7 +39,7 @@ class FloatButton;
  * 职责：
  * - 提供与 FFmpegView 兼容的接口
  * - 使用 VideoRenderer 架构进行渲染
- * - 管理 UI 组件（FullscreenTipsWidget, SubtitleWidget, FloatButton）
+ * - 管理 UI 组件（FullscreenTipsWidget, SubtitleWidget）
  */
 class StereoVideoWidget : public VideoWidgetBase
 {
@@ -129,13 +129,7 @@ public:
 
     // UI 组件访问（与 FFmpegView 兼容）
 
-    /**
-     * FloatButton：播放列表显示按钮
-     * - 位置：右侧中间
-     * - 显示逻辑：鼠标进入窗口时显示，离开时隐藏
-     * - 功能：点击触发signals_playListShow_clicked信号，显示/隐藏播放列表
-     */
-    FloatButton *butWidget = nullptr;
+    // BUG-045: FloatButton 已移除，播放列表按钮已移至 MainWindow 底部控制栏
 
     /**
      * FullscreenTipsWidget：全屏提示显示组件

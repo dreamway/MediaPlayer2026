@@ -106,6 +106,9 @@ public:
         hotKeyMap.insert("SubtitleTab_ChangeSubtitle", QKeySequence("C"));
 
         hotKeyMap.insert("OthersTab_PlayList", QKeySequence("F3"));
+        // BUG修复: 全屏快捷键默认值
+        // Fullscreen+ (拉伸填充) = Ctrl+Return
+        // Fullscreen (保持比例) = Return
         hotKeyMap.insert("OthersTab_FullScreenPlus", QKeySequence("Ctrl+Return"));
         hotKeyMap.insert("OthersTab_FullScreen", QKeySequence("Return"));
         //hotKeyMap.insert("OthersTab_Min", QKeySequence("F4"));
