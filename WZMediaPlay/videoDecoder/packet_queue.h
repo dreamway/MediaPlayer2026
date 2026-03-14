@@ -384,6 +384,8 @@ private:
             return nullptr;
         }
 
+        // BUG-047 修复：即使 finished_ 为 true，如果队列还有数据，也要返回数据包
+        // 这样可以确保所有数据包都被处理完
         return packets_.empty() ? nullptr : &packets_.front();
     }
 
