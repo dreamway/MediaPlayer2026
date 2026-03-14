@@ -134,12 +134,20 @@ void StereoOpenGLRenderer::setStereoOutputFormat(StereoOutputFormat outputFormat
 
     auto *stereoDrawable = getStereoDrawable();
     if (stereoDrawable) {
+        // BUG-043 修复：在切换输出格式前，先设置保存的最后一帧
+        // 这样 paintGLStereo() 就有帧数据可以渲染
+        if (hasLastFrame_ && !lastFrame_.isEmpty()) {
+            QMutexLocker locker(&drawable_->videoFrameMutex);
+            drawable_->videoFrame = lastFrame_;
+        }
+
         stereoDrawable->setStereoOutputFormat(outputFormat);
         stereoDrawable->updateGL(false);
     }
 
     if (logger) {
-        logger->info("StereoOpenGLRenderer::setStereoOutputFormat: Output format set to {}", static_cast<int>(outputFormat));
+        logger->info("StereoOpenGLRenderer::setStereoOutputFormat: Output format set to {}, hasLastFrame={}",
+            static_cast<int>(outputFormat), hasLastFrame_);
     }
 }
 
@@ -233,6 +241,11 @@ bool StereoOpenGLRenderer::render3D(const Frame &frame)
 
     // 更新颜色空间
     updateColorSpace(frame);
+
+    // BUG-043 修复：保存最后一帧，用于 DrawWidget 底图渲染
+    // 当用户切换到 ONLY_LEFT 模式时，需要使用保存的帧重新渲染
+    lastFrame_ = frame;
+    hasLastFrame_ = true;
 
     // 设置帧数据 - 使用互斥锁保护，避免渲染时帧数据被修改
     {

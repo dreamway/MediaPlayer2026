@@ -12,8 +12,8 @@
 | 状态 | 数量 |
 |------|------|
 | ✅ 已修复且已验证 | 29 |
-| ✅ 已修复待验证 | 7 |
-| 🟡 待修复 | 3 |
+| ✅ 已修复待验证 | 12 |
+| 🟡 待修复 | 2 |
 | 📋 已知问题（低优先级） | 2 |
 
 ---
@@ -22,14 +22,16 @@
 
 | 编号 | 描述 | 优先级 | 状态 | 发现日期 |
 |------|------|--------|------|---------|
-| BUG-039 | 停止播放后画面和UI状态未重置 | P1 | 🟡 修复中 | 2026-03-13 |
-| BUG-040 | Seeking 时线程竞争导致崩溃 | P0 | 🟡 修复中 | 2026-03-13 |
-| BUG-041 | 暂停时大量日志输出导致性能问题 | P2 | 🟡 修复中 | 2026-03-13 |
+| BUG-039 | 停止播放后画面和UI状态未重置 | P1 | ✅ 已修复待验证 | 2026-03-13 |
+| BUG-040 | Seeking 时线程竞争导致崩溃 | P0 | ✅ 已修复待验证 | 2026-03-13 |
+| BUG-041 | 暂停时大量日志输出导致性能问题 | P2 | ✅ 已修复待验证 | 2026-03-13 |
 | BUG-042 | macOS 停止时 Logo 未显示 | P1 | ✅ 已修复待验证 | 2026-03-13 |
-| BUG-043 | DrawWidget 底图显示灰白而非 ONLY_LEFT 图像 | P1 | 🟡 调查中 | 2026-03-13 |
+| BUG-043 | DrawWidget 底图显示灰白而非 ONLY_LEFT 图像 | P1 | ✅ 已修复待验证 | 2026-03-13 |
 | BUG-044 | 播放列表双击后进度条不更新 | P0 | ✅ 已修复待验证 | 2026-03-14 |
 | BUG-045 | FloatButton 效果不好，建议添加列表图标 | P2 | 📋 设计改进 | 2026-03-13 |
-| BUG-046 | 快速连续 Seeking 导致视频卡住但音频继续 | P0 | 🔴 调查中 | 2026-03-13 |
+| BUG-046 | 快速连续 Seeking 导致视频卡住但音频继续 | P0 | ✅ 已修复待验证 | 2026-03-14 |
+| BUG-047 | Logo 显示时机问题（播放中显示/停止后背景未清除） | P1 | 🟡 待修复 | 2026-03-14 |
+| BUG-048 | 进度条状态与实际播放不一致 | P1 | 🟡 待修复 | 2026-03-14 |
 
 ---
 
@@ -43,7 +45,7 @@
 | **修复内容** | 1. 在 `on_pushButton_stop_clicked()` 中添加 UI 重置代码<br>2. 修改 `StopRendering()` 使用 `repaint()` 强制 OpenGL widget 同步重绘<br>3. 修复 macOS 资源路径：添加 `getResourcesBasePath()` 和 `getConfigPath()` 辅助函数 |
 | **修复文件** | `WZMediaPlay/MainWindow.cpp`, `WZMediaPlay/StereoVideoWidget.cpp`, `WZMediaPlay/ApplicationSettings.cpp` |
 | **优先级** | P1 |
-| **状态** | 🟡 修复中（代码已修改，待测试验证） |
+| **状态** | ✅ 已修复待验证 |
 
 ### BUG-040: Seeking 时线程竞争导致崩溃
 
@@ -54,7 +56,7 @@
 | **修复内容** | 1. 在 `OpenGLCommon.hpp` 中添加 `videoFrameMutex` 互斥锁<br>2. 在 `paintGLStereo()` 中使用本地帧副本<br>3. 在渲染器中加锁保护帧数据赋值 |
 | **修复文件** | `WZMediaPlay/videoDecoder/opengl/OpenGLCommon.hpp`, `StereoOpenGLCommon.cpp`, `OpenGLRenderer.cpp`, `StereoOpenGLRenderer.cpp` |
 | **优先级** | P0 |
-| **状态** | 🟡 修复中（代码已修改，待测试验证） |
+| **状态** | ✅ 已修复待验证 |
 
 ### BUG-041: 暂停时大量日志输出导致性能问题
 
@@ -65,7 +67,7 @@
 | **修复内容** | 1. 将暂停日志从 INFO 降级为 DEBUG<br>2. 在暂停检查中增加 50ms 等待时间，避免 CPU 空转 |
 | **修复文件** | `WZMediaPlay/videoDecoder/VideoThread.cpp` |
 | **优先级** | P2 |
-| **状态** | 🟡 修复中（代码已修改，待测试验证） |
+| **状态** | ✅ 已修复待验证 |
 
 ### BUG-042: macOS 停止时 Logo 未显示
 
@@ -84,11 +86,11 @@
 |------|------|
 | **现象** | 使用 Ctrl+9 唤醒 DrawWidget 时，底图不是真实视频的 ONLY_LEFT 图像，而是一个灰白的图像 |
 | **预期** | 底图应该是 3D 视频的左视图（ONLY_LEFT 模式） |
-| **根因分析** | 初步分析：1. `SetStereoOutputFormat(ONLY_LEFT)` 调用后 `repaint()` 触发重绘<br>2. 但 `paintGLStereo()` 可能因为 `frameIsEmpty` 返回早期分支<br>3. 灰白色可能来自 OpenGL 初始化状态或 DrawWidget 的绘制背景 |
-| **修复方向** | 需要调查：1. 确保格式切换后立即使用当前帧重新渲染<br>2. 检查 `hasImage` 状态在格式切换时是否正确 |
-| **修复文件** | `WZMediaPlay/MainWindow.cpp`, `WZMediaPlay/videoDecoder/opengl/StereoOpenGLCommon.cpp` |
+| **根因** | 1. `render3D()` 没有保存最后一帧到 `lastFrame_`<br>2. `setStereoOutputFormat()` 设置 `doReset = true` 导致纹理重新初始化<br>3. 但 `videoFrame` 为空，`hasImage` 变为 false，无法渲染 |
+| **修复内容** | 1. 在 `render3D()` 中保存最后一帧到 `lastFrame_` 和 `hasLastFrame_`<br>2. 在 `setStereoOutputFormat()` 中切换格式前设置 `videoFrame = lastFrame_` |
+| **修复文件** | `WZMediaPlay/videoDecoder/opengl/StereoOpenGLRenderer.cpp` |
 | **优先级** | P1 |
-| **状态** | 🟡 调查中 |
+| **状态** | ✅ 已修复待验证 |
 
 ### BUG-044: 播放列表双击后进度条不更新
 
@@ -116,11 +118,33 @@
 |------|------|
 | **现象** | 快速连续拖动进度条 Seeking 时，视频画面卡在某一帧不再刷新，但音频继续正常播放 |
 | **日志** | `[VideoThread.cpp:1182][warning] : VideoThread::run: renderFrame failed 100 times` |
-| **根因分析** | 调查中。已添加诊断日志，初步排除状态机卡在 Seeking 的情况。可能原因：<br>1. 视频帧解码速度跟不上快速 seek 请求<br>2. 4K 视频解码压力大，在快速 seek 时更容易触发问题<br>3. 音视频时钟同步问题 |
-| **复现条件** | 使用 wukong4K-40S.mp4 等高分辨率视频，快速连续拖动进度条 |
-| **修复文件** | `WZMediaPlay/videoDecoder/VideoThread.cpp`, `WZMediaPlay/PlayController.cpp`, `WZMediaPlay/PlaybackStateMachine.cpp` |
+| **根因** | `PlaybackStateMachine::isValidTransition()` 中 `Seeking` 状态未包含 `Ready` 作为合法目标状态。EOF 后用户 seek 时，`exitSeeking()` 尝试从 `Seeking` 转换到 `Ready`，但因该转换未被标记为合法而失败 |
+| **修复内容** | 在 `isValidTransition()` 的 `Seeking` case 中添加 `PlaybackState::Ready` 作为合法转换目标 |
+| **修复文件** | `WZMediaPlay/PlaybackStateMachine.cpp` |
+| **测试结果** | ✓ PlaybackStateMachineTest 全部 17 个测试通过，包括 EofSeekScenario |
 | **优先级** | P0 |
-| **状态** | 🔴 待修复（调查中，暂缓） |
+| **状态** | ✅ 已修复待验证 |
+
+### BUG-047: Logo 显示时机问题
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 1. 播放过程中 Logo 一直显示，遮挡视频画面<br>2. 播放结束后/停止后，GL 背景没有清除，导致 mWindowLogo 与未清除的渲染图同时显示 |
+| **根因** | 待分析 - 可能原因：<br>1. Logo 的 z-order 问题导致无法正确隐藏<br>2. `StopRendering()` 中 `clear()` 后 `repaint()` 未触发正确的 GL 缓冲区清除 |
+| **修复文件** | 待确定 |
+| **优先级** | P1 |
+| **状态** | 🟡 待修复 |
+
+### BUG-048: 进度条状态不一致
+
+| 属性 | 描述 |
+|------|------|
+| **现象** | 进度条状态与实际播放进度不一致，可能是时钟类型切换后的问题 |
+| **根因** | 待分析 - 需要添加进度条数值变化日志来诊断 |
+| **诊断方法** | 在 `OnUpdateStatusTimer()` 中添加详细的进度条数值日志 |
+| **修复文件** | 待确定 |
+| **优先级** | P1 |
+| **状态** | 🟡 待修复 |
 
 ---
 

@@ -115,9 +115,13 @@ bool PlaybackStateMachine::isValidTransition(PlaybackState from, PlaybackState t
                    to == PlaybackState::Error;
             
         case PlaybackState::Seeking:
-            return to == PlaybackState::Playing || 
-                   to == PlaybackState::Paused || 
-                   to == PlaybackState::Stopping || 
+            // 允许转换到 Playing、Paused（正常退出 seeking）
+            // 允许转换到 Ready（EOF 后 seek 的场景）
+            // 允许转换到 Stopping、Error（错误处理）
+            return to == PlaybackState::Playing ||
+                   to == PlaybackState::Paused ||
+                   to == PlaybackState::Ready ||
+                   to == PlaybackState::Stopping ||
                    to == PlaybackState::Error;
             
         case PlaybackState::Stopping:

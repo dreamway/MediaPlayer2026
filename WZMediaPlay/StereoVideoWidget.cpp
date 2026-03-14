@@ -493,12 +493,25 @@ int StereoVideoWidget::StartRendering(StereoFormat stereoFormat, StereoInputForm
 
     isRendering_ = true;
 
+    // BUG-047 诊断：记录 Logo 隐藏前的状态
+    if (logger && mWindowLogo) {
+        logger->info("StereoVideoWidget::StartRendering: BEFORE hide - Logo visible={}, geometry=({},{},{},{}), parent={}",
+            mWindowLogo->isVisible(),
+            mWindowLogo->x(), mWindowLogo->y(), mWindowLogo->width(), mWindowLogo->height(),
+            mWindowLogo->parent() ? "YES" : "NO");
+    }
+
     // BUG-035 修复：确保 Logo 被正确隐藏
     // 使用 hide() + lower() + clearFocus() 确保 Logo 完全隐藏且不在顶层
     if (mWindowLogo) {
         mWindowLogo->hide();
         mWindowLogo->lower();  // 确保在 z-order 最底层
         mWindowLogo->clearFocus();
+    }
+
+    // BUG-047 诊断：记录 Logo 隐藏后的状态
+    if (logger && mWindowLogo) {
+        logger->info("StereoVideoWidget::StartRendering: AFTER hide - Logo visible={}", mWindowLogo->isVisible());
     }
 
     // BUG-035 修复：触发立即重绘，确保 Logo 隐藏生效
@@ -519,7 +532,14 @@ int StereoVideoWidget::StartRendering(StereoFormat stereoFormat, StereoInputForm
 bool StereoVideoWidget::StopRendering()
 {
     if (!isRendering_) {
+        if (logger) {
+            logger->info("StereoVideoWidget::StopRendering: Already not rendering, skipping");
+        }
         return false;
+    }
+
+    if (logger) {
+        logger->info("StereoVideoWidget::StopRendering: Starting stop sequence...");
     }
 
     if (renderTimer_) {
@@ -531,10 +551,34 @@ bool StereoVideoWidget::StopRendering()
 
     isRendering_ = false;
 
+    // BUG-047 诊断：记录 clear() 前的状态
+    if (logger && videoRenderer_) {
+        auto *oglRenderer = dynamic_cast<OpenGLRenderer *>(videoRenderer_.get());
+        if (oglRenderer) {
+            OpenGLCommon *glCommon = dynamic_cast<OpenGLCommon *>(oglRenderer->drawable());
+            if (glCommon) {
+                logger->info("StereoVideoWidget::StopRendering: BEFORE clear - hasImage={}, videoFrame empty={}",
+                    glCommon->hasImage, glCommon->videoFrame.isEmpty());
+            }
+        }
+    }
+
     // BUG-034 修复：先清空视频渲染器，确保 OpenGL 缓冲区被清除
     // 避免旧帧残留在 Logo 背景中
     if (videoRenderer_) {
         videoRenderer_->clear();
+    }
+
+    // BUG-047 诊断：记录 clear() 后的状态
+    if (logger && videoRenderer_) {
+        auto *oglRenderer = dynamic_cast<OpenGLRenderer *>(videoRenderer_.get());
+        if (oglRenderer) {
+            OpenGLCommon *glCommon = dynamic_cast<OpenGLCommon *>(oglRenderer->drawable());
+            if (glCommon) {
+                logger->info("StereoVideoWidget::StopRendering: AFTER clear - hasImage={}, videoFrame empty={}",
+                    glCommon->hasImage, glCommon->videoFrame.isEmpty());
+            }
+        }
     }
 
     // BUG-034 补充：通过渲染器获取 OpenGL widget 并强制立即重绘
@@ -543,6 +587,9 @@ bool StereoVideoWidget::StopRendering()
     auto *oglRenderer = dynamic_cast<OpenGLRenderer *>(videoRenderer_.get());
     if (oglRenderer && oglRenderer->widget()) {
         // 使用 repaint() 强制立即同步重绘，确保 glClear() 被执行
+        if (logger) {
+            logger->info("StereoVideoWidget::StopRendering: Calling widget()->repaint() to trigger glClear()");
+        }
         oglRenderer->widget()->repaint();
     }
 
@@ -552,6 +599,13 @@ bool StereoVideoWidget::StopRendering()
         mWindowLogo->move((width() - mWindowLogo->width()) / 2, (height() - mWindowLogo->height()) / 2);
         mWindowLogo->raise();  // 确保 Logo 在顶层
         mWindowLogo->show();
+
+        if (logger) {
+            logger->info("StereoVideoWidget::StopRendering: Logo shown at ({},{}) size {}x{}, visible={}",
+                mWindowLogo->x(), mWindowLogo->y(),
+                mWindowLogo->width(), mWindowLogo->height(),
+                mWindowLogo->isVisible());
+        }
     }
 
     if (logger) {
@@ -911,12 +965,17 @@ void StereoVideoWidget::OnUpdateStatusTimer()
         return;
     }
 
-    // BUG-042 诊断：记录每次定时器调用的状态
+    // BUG-048 诊断：记录每次定时器调用的状态，包括进度条数值
     if (logger) {
         static int callCounter = 0;
-        if (callCounter++ % 50 == 0) {  // 每5秒记录一次
-            logger->info("OnUpdateStatusTimer: Timer active, isRendering_={}, isOpened={}, isPaused={}, isSeeking={}",
-                isRendering_, playController_->isOpened(), playController_->isPaused(), playController_->isSeeking());
+        if (callCounter++ % 10 == 0) {  // 每秒记录一次
+            int64_t durationMs = playController_->getDurationMs();
+            int64_t positionMs = playController_->getCurrentPositionMs();
+            double positionPercent = durationMs > 0 ? (double)positionMs / durationMs * 100.0 : 0.0;
+            logger->info("OnUpdateStatusTimer: position={}/{} ms ({:.1f}%), isRendering_={}, isOpened={}, isPaused={}, isSeeking={}, lastPositionSeconds_={}",
+                positionMs, durationMs, positionPercent,
+                isRendering_, playController_->isOpened(), playController_->isPaused(), playController_->isSeeking(),
+                lastPositionSeconds_);
         }
     }
 

@@ -6,8 +6,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 WZMediaPlayer is a cross-platform C++ media player built with Qt 6.6.3, FFmpeg, OpenGL, and OpenAL. It supports video playback, 3D stereo rendering, and camera input.
 
+## 核心目录结构 (Core Directories)
+
+```
+项目根目录: /Users/jingwenlai/leadwit-tech/WeiZheng/MediaPlayer2026/
+├── WZMediaPlay/          # C++ 源码目录
+├── build/                # CMake/Ninja 构建输出目录 (macOS)
+├── testing/              # 测试相关目录
+│   ├── pyobjc/           # macOS Python GUI 测试主目录
+│   │   ├── tests/        # macOS 测试用例目录
+│   │   ├── core/         # 测试核心模块 (app_launcher, screenshot_capture 等)
+│   │   ├── config.py     # 测试配置
+│   │   └── run_all_tests.py  # 综合测试入口
+│   ├── pywinauto/        # Windows Python GUI 测试目录
+│   └── video/            # 测试视频文件目录
+│       ├── bbb_sunflower_1080p_30fps_normal.mp4    # 标准 2D 测试视频
+│       ├── bbb_sunflower_1080p_30fps_stereo_abl.mp4 # 3D 立体测试视频
+│       ├── test_60s.mp4  # 60秒测试视频
+│       └── ...           # 其他测试视频
+├── docs/                 # 文档目录
+├── new-docs/             # 新文档目录 (Bug 登记表等)
+└── dist/                 # 发布输出目录
+```
+
 ## Build Commands
-Current Is Running On macOS Platform.
+
+**当前运行平台: macOS**
+
+### macOS 构建命令 (当前平台)
+```bash
+# 从项目根目录执行
+cd /Users/jingwenlai/leadwit-tech/WeiZheng/MediaPlayer2026
+
+# 配置 (首次或修改 CMakeLists.txt 后)
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+# 编译
+cmake --build build
+
+# 运行单元测试
+cd build && ctest --output-on-failure
+```
+
 ### Windows (MSBuild)
 ```batch
 # Build Release (default)
@@ -18,21 +58,6 @@ build.bat Debug
 
 # Initial CMake configuration (one-time)
 cmake -B build -G "Visual Studio 17 2022" -A x64
-```
-
-### macOS/Linux (CMake + Ninja)
-```bash
-# Configure and build
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-
-# Or use the convenience script
-./build_ninja.bat  # Windows with Ninja
-```
-
-### Run Unit Tests
-```bash
-cd build && ctest --output-on-failure
 ```
 
 ## Code Style
@@ -105,19 +130,40 @@ Media File → DemuxerThread → PacketQueue → VideoThread/AudioThread
 
 ## Testing
 
-### Python GUI Tests (Windows)
+### macOS Python GUI 测试 (当前平台)
+```bash
+# 从项目根目录执行
+cd /Users/jingwenlai/leadwit-tech/WeiZheng/MediaPlayer2026/testing/pyobjc
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 运行综合测试
+python run_all_tests.py
+
+# 运行单个测试
+python tests/test_gui_e2e.py
+python tests/test_basic_playback.py
+python tests/test_3d_rendering.py
+```
+
+**主要测试文件:**
+- `tests/test_gui_e2e.py` - GUI 端到端测试
+- `tests/test_basic_playback.py` - 基础播放测试
+- `tests/test_3d_rendering.py` - 3D 渲染测试
+- `tests/test_comprehensive.py` - 综合测试
+- `tests/test_playback_sync.py` - 播放同步测试
+
+### Windows Python GUI Tests
 ```bash
 cd testing/pywinauto
 pip install -r requirements.txt
 python run_all_tests.py
 ```
 
-Test suites: `test_basic_playback.py`, `test_progress_seek.py`, `test_3d_features.py`, `test_av_sync.py`, `test_hardware_decoding.py`, `test_audio.py`, `test_edge_cases.py`
-
 ### C++ Unit Tests
 ```bash
-cd build
-ctest --output-on-failure
+cd build && ctest --output-on-failure
 ```
 
 Executables: `PlaybackStateMachineTest`, `ErrorRecoveryManagerTest`, `SeekingStateMachineTest`
@@ -127,6 +173,14 @@ Executables: `PlaybackStateMachineTest`, `ErrorRecoveryManagerTest`, `SeekingSta
 - **System config**: `WZMediaPlay/config/SystemConfig.ini` (hardware decoding, FPS display, etc.)
 - **Log config**: `WZMediaPlay/config/LogConfig.ini`
 - **Log files**: `WZMediaPlay/logs/MediaPlayer_*.log`
+
+### 测试视频文件
+位于 `testing/video/` 目录:
+- `bbb_sunflower_1080p_30fps_normal.mp4` - 2D 标准 1080p 测试视频
+- `bbb_sunflower_1080p_30fps_stereo_abl.mp4` - 3D 立体测试视频
+- `test_60s.mp4` - 60秒测试视频
+- `wukong_2D3D-40S.mp4` - 2D/3D 对比测试视频
+- `wukong4K-40S.mp4` - 4K 测试视频
 
 ## Dependencies
 
@@ -150,6 +204,6 @@ Default language: Chinese (中文). Use Chinese for documentation, code comments
 
 - Architecture: `docs/lwPlayer/渲染架构关系图.md`
 - Current TODO: `docs/TODO_CURRENT.md`
-- Bug registry: `docs/cursor/FULL_BUG_REGISTRY.md`
+- Bug registry: `new-docs/FULL_BUG_REGISTRY.md`
 - Testing docs: `testing/pywinauto/README.md`
 - Recent Changes: `docs/plans/*.md`

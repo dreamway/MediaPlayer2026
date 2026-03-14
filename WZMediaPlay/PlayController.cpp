@@ -46,7 +46,7 @@ PlayController::PlayController(QObject *parent)
     , videoStreamIndex_(-1)
     , audioStreamIndex_(-1)
     , subtitleStreamIndex_(-1)
-    , masterClock_(std::make_unique<AVClock>(AVClock::AudioClock, this)) // 创建主时钟，默认使用音频时钟
+    , masterClock_(std::make_unique<AVClock>(AVClock::ExternalClock, this)) // 创建主时钟，使用外部时钟确保进度条在音频解码前就能更新
 {
     // 初始化状态机为Idle状态
     stateMachine_.transitionTo(PlaybackState::Idle, "PlayController constructed");
