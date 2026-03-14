@@ -88,6 +88,13 @@ bool StereoOpenGLRenderer::open()
 
 bool StereoOpenGLRenderer::render(const Frame &frame)
 {
+    // BUG-046 修复：无论 2D 还是 3D 模式，都保存最后一帧
+    // 用于切换到 ONLY_LEFT 模式时显示底图（如局部 3D 绘制 ROI 时）
+    if (!frame.isEmpty()) {
+        lastFrame_ = frame;
+        hasLastFrame_ = true;
+    }
+
     if (stereoFormat_ == STEREO_FORMAT_NORMAL_2D) {
         // 2D 模式：使用基类的渲染
         return OpenGLRenderer::render(frame);

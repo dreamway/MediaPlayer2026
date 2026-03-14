@@ -793,10 +793,14 @@ int AudioThread::decodeFrame()
             int pret = aPackets_->sendTo(codecctx_.get(), "AudioQueue");
 
             if (pret == AVErrorEOF) {
-                // 队列已结束，尝试flush解码器获取剩余帧
+                // 队列已标记结束
+                // BUG-047 修复：不要在队列还有数据时 flush 解码器
+                // 正确做法：如果队列还有数据包，继续尝试发送
+                // 如果队列为空，才标记音频结束
                 if (aPackets_ && aPackets_->Size() > 0) {
-                    logger->info("AudioThread::decodeFrame: EOF but {} packets remaining, flushing decoder", aPackets_->Size());
-                    avcodec_flush_buffers(codecctx_.get());
+                    // 队列还有数据，可能是 finished_ 标志已设置但数据包未处理完
+                    // 等待一小段时间让队列处理
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }
                 // 真正的 EOF，标记音频结束
@@ -830,10 +834,12 @@ int AudioThread::decodeFrame()
         } else if (ret != 0) {
             // 接收帧时出错
             if (ret == AVErrorEOF) {
-                // EOF，检查是否还有数据包
+                // 解码器已返回 EOF，所有数据已处理完
+                // BUG-047 修复：如果队列还有数据，尝试发送新数据到解码器
+                // 只有当队列也为空时才真正结束
                 if (aPackets_ && aPackets_->Size() > 0) {
-                    logger->info("AudioThread::decodeFrame: EOF but {} packets remaining, flushing decoder", aPackets_->Size());
-                    avcodec_flush_buffers(codecctx_.get());
+                    // 队列还有数据，尝试发送
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }
                 // 真正的 EOF，标记音频结束
