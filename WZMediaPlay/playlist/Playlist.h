@@ -54,6 +54,9 @@ public:
     int indexOf(const QString& filename) const;
     QList<PlaylistItem> items() const { return items_; }
 
+    // 更新项的文件存在性状态
+    void updateItemFileExists(int index, bool exists);
+
     // 当前播放项
     int currentIndex() const { return currentIndex_; }
     PlaylistItem currentItem() const;

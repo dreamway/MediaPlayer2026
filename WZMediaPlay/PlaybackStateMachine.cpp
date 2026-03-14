@@ -94,7 +94,10 @@ bool PlaybackStateMachine::isValidTransition(PlaybackState from, PlaybackState t
     // 定义合法的状态转换
     switch (from) {
         case PlaybackState::Idle:
-            return to == PlaybackState::Opening || to == PlaybackState::Error;
+            // 允许 Idle → Stopped（停止按钮在无视频时的合法操作）
+            return to == PlaybackState::Opening ||
+                   to == PlaybackState::Stopped ||
+                   to == PlaybackState::Error;
             
         case PlaybackState::Opening:
             return to == PlaybackState::Ready || to == PlaybackState::Error || to == PlaybackState::Stopping;

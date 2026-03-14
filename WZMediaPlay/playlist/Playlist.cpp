@@ -116,6 +116,15 @@ int Playlist::indexOf(const QString& filename) const
     return -1;
 }
 
+void Playlist::updateItemFileExists(int index, bool exists)
+{
+    if (index < 0 || index >= items_.count()) {
+        return;
+    }
+    items_[index].setFileExists(exists);
+    emit itemUpdated(index, items_[index]);
+}
+
 PlaylistItem Playlist::currentItem() const
 {
     if (currentIndex_ < 0 || currentIndex_ >= items_.count()) {

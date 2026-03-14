@@ -8,6 +8,7 @@ class VideoInfo
 public:
     QString video_path;
     QString video_total_time;
+    bool file_exists = true;  // 文件是否存在（默认为 true，导入时验证）
 };
 
 class PlayList

@@ -946,6 +946,20 @@ void StereoVideoWidget::OnUpdateStatusTimer()
     if (mSubtitleWidget) {
         UpdateSubtitlePosition(currentPositionMs);
     }
+
+    // BUG-055 修复：当 position 已达到 duration 时，主动检测播放是否结束
+    // 问题根因：当 position 被 clamped 到 duration 后，currentPositionSeconds 不再变化，
+    // 导致 updatePlayProcess 信号不再发送，checkAndStopIfFinished 不被调用
+    int64_t durationMs = playController_->getDurationMs();
+    if (durationMs > 0 && currentPositionMs >= durationMs) {
+        // Position 已达到或超过 duration，检查播放是否应该结束
+        if (playController_->checkAndStopIfFinished(currentPositionSeconds)) {
+            if (logger) {
+                logger->info("OnUpdateStatusTimer: Detected playback finished at position={}/{}, triggering stop",
+                    currentPositionMs, durationMs);
+            }
+        }
+    }
 }
 
 void StereoVideoWidget::onPlaybackStateChanged(PlaybackState state)

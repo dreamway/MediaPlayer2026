@@ -15,6 +15,7 @@
 #include "SloganWidget.h"
 #include <QVBoxLayout>
 #include <QAccessible>  // 用于 Accessibility 更新
+#include <QCloseEvent>
 #include "spdlog/sinks/basic_file_sink.h"
 #include "spdlog/sinks/rotating_file_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
@@ -307,6 +308,34 @@ MainWindow::MainWindow(QWidget *parent)
             logger->debug("MainWindow: Current video changed to: {}", videoPath.toStdString());
             // 不在这里自动播放，由调用setCurrentVideo的地方负责播放
         });
+
+        // 检查播放列表中是否存在丢失的文件，并提示用户
+        int missingCount = playListManager_->getTotalMissingFilesCount();
+        if (missingCount > 0) {
+            logger->info("MainWindow: Found {} missing files in playlist", missingCount);
+
+            QMessageBox msgBox(this);
+            msgBox.setWindowTitle(tr("播放列表文件校验"));
+            msgBox.setText(tr("检测到 %1 个文件不存在或无法访问。").arg(missingCount));
+            msgBox.setInformativeText(tr("是否从播放列表中移除这些丢失的文件？"));
+            msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+            msgBox.setDefaultButton(QMessageBox::Yes);
+            msgBox.setIcon(QMessageBox::Question);
+
+            int result = msgBox.exec();
+            if (result == QMessageBox::Yes) {
+                int removed = playListManager_->removeMissingFiles();
+                logger->info("MainWindow: Removed {} missing files from playlist", removed);
+                // 保存更新后的播放列表
+                playListManager_->saveToJson();
+                // 重绘播放列表（移除已删除的文件）
+                drawPlayList();
+            } else {
+                // 用户选择 No，重绘播放列表以显示缺失文件的灰色样式
+                drawPlayList();
+            }
+        }
+
         logger->info("MainWindow: PlayListManager created");
     }
 
@@ -1594,16 +1623,34 @@ void MainWindow::drawPlayList()
             ui.tabWidget_playList->addTab(itemPage, GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[i].list_name);
         }
         for (int j = 0; j < GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[i].video_list.size(); ++j) {
+            const VideoInfo& videoInfo = GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[i].video_list[j];
+            QString mvPath = videoInfo.video_path;
+            mvPath = mvPath.replace("\\", "/");
+            QStringList mvPathArr = mvPath.split("/");
+            QString displayText = QString::number(j + 1) + "." + mvPathArr[mvPathArr.size() - 1];
+
             if (i == 0) {
-                QString mvPath = GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[i].video_list[j].video_path;
-                mvPath = mvPath.replace("\\", "/");
-                QStringList mvPathArr = mvPath.split("/");
-                ui.listWidget_playlist->addItem(QString::number(j + 1) + "." + mvPathArr[mvPathArr.size() - 1]);
+                QListWidgetItem *item = new QListWidgetItem(displayText, ui.listWidget_playlist);
+                // 如果文件不存在，设置为灰色并禁用
+                if (!videoInfo.file_exists) {
+                    item->setForeground(QColor(128, 128, 128));  // 灰色文字
+                    item->setBackground(QColor(48, 48, 48));     // 深灰背景
+                    QFont font = item->font();
+                    font.setItalic(true);  // 斜体表示缺失文件
+                    item->setFont(font);
+                }
+                ui.listWidget_playlist->addItem(item);
             } else {
-                QString mvPath = GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[i].video_list[j].video_path;
-                mvPath = mvPath.replace("\\", "/");
-                QStringList mvPathArr = mvPath.split("/");
-                itemPage->getListWidget()->addItem(QString::number(j + 1) + "." + mvPathArr[mvPathArr.size() - 1]);
+                QListWidgetItem *item = new QListWidgetItem(displayText, itemPage->getListWidget());
+                // 如果文件不存在，设置为灰色并禁用
+                if (!videoInfo.file_exists) {
+                    item->setForeground(QColor(128, 128, 128));  // 灰色文字
+                    item->setBackground(QColor(48, 48, 48));     // 深灰背景
+                    QFont font = item->font();
+                    font.setItalic(true);  // 斜体表示缺失文件
+                    item->setFont(font);
+                }
+                itemPage->getListWidget()->addItem(item);
             }
         }
     }
@@ -2402,6 +2449,48 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
     }
 
     return QWidget::keyPressEvent(event);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    // 检查播放列表是否有未保存的变化
+    if (playListManager_ && playListManager_->isDirty()) {
+        QMessageBox msgBox(this);
+        msgBox.setWindowTitle(tr("保存播放列表"));
+        msgBox.setText(tr("播放列表已修改，是否保存？"));
+        msgBox.setStandardButtons(QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+        msgBox.setDefaultButton(QMessageBox::Save);
+        msgBox.setIcon(QMessageBox::Question);
+
+        int result = msgBox.exec();
+        switch (result) {
+        case QMessageBox::Save:
+            // 保存后继续关闭
+            playListManager_->saveToJson();
+            if (logger) {
+                logger->info("MainWindow: Playlist saved on exit");
+            }
+            event->accept();
+            break;
+        case QMessageBox::Discard:
+            // 不保存，直接关闭
+            if (logger) {
+                logger->info("MainWindow: Playlist changes discarded on exit");
+            }
+            event->accept();
+            break;
+        case QMessageBox::Cancel:
+            // 取消关闭
+            event->ignore();
+            break;
+        default:
+            event->accept();
+            break;
+        }
+    } else {
+        // 没有未保存的变化，直接关闭
+        event->accept();
+    }
 }
 
 void MainWindow::mousePressEvent(QMouseEvent *event)

@@ -47,6 +47,13 @@ public:
     // 是否有效（有文件名）
     bool isValid() const { return !filename_.isEmpty(); }
 
+    // 文件是否存在
+    bool fileExists() const { return fileExists_; }
+    void setFileExists(bool exists) { fileExists_ = exists; }
+
+    // 检查文件是否存在（静态方法，实际检查文件系统）
+    static bool checkFileExists(const QString& filepath);
+
     // 相等比较
     bool operator==(const PlaylistItem& other) const {
         return filename_ == other.filename_;
@@ -59,6 +66,7 @@ private:
     QString filename_;      // 文件路径
     QString title_;         // 显示标题（可为空，默认从文件名提取）
     int64_t duration_ = 0;  // 时长（毫秒）
+    bool fileExists_ = true; // 文件是否存在（默认为 true，导入时验证）
 };
 
 } // namespace playlist

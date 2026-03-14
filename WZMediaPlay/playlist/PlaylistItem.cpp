@@ -48,4 +48,12 @@ QString PlaylistItem::formattedDuration() const
     }
 }
 
+bool PlaylistItem::checkFileExists(const QString& filepath)
+{
+    if (filepath.isEmpty()) {
+        return false;
+    }
+    return QFileInfo::exists(filepath);
+}
+
 } // namespace playlist

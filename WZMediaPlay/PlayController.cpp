@@ -1461,6 +1461,19 @@ bool PlayController::isPlaybackFinished(int64_t currentElapsedSeconds) const
         return false;
     }
 
+    // BUG-055 修复：当时钟已经超过 duration 时，快速判断为播放结束
+    // 这处理了时钟继续累加但队列/超时条件未满足的情况
+    nanoseconds masterClock = getMasterClock();
+    int64_t clockMs = std::chrono::duration_cast<milliseconds>(masterClock).count();
+    bool clockExceededDuration = (clockMs > totalMs + 1000); // 时钟超过 duration 1 秒以上
+
+    if (clockExceededDuration) {
+        SPDLOG_LOGGER_INFO(logger,
+            "isPlaybackFinished: Clock ({} ms) exceeded duration ({} ms) by more than 1 second, treating as finished",
+            clockMs, totalMs);
+        return true;
+    }
+
     if (totalSeconds > 3) {
         int64_t timeDiff = totalSeconds - currentElapsedSeconds;
         timeNearEnd = (timeDiff >= -2 && timeDiff <= 10);
