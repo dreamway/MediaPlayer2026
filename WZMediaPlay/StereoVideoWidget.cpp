@@ -284,16 +284,7 @@ void StereoVideoWidget::initializeUIComponents()
 
     // BUG-045: FloatButton 已移除，播放列表按钮已移至 MainWindow 底部控制栏
 
-    // mWindowLogo：播放窗口Logo标签
-    // - 初始状态：隐藏
-    // - 功能：未播放视频时显示Logo，播放时隐藏
-    if (!mWindowLogo) {
-        mWindowLogo = new QLabel(this);
-        mWindowLogPM.load(GlobalDef::getInstance()->PLAY_WINDOW_LOGO_PATH);
-        mWindowLogo->resize(mWindowLogPM.size());
-        mWindowLogo->setPixmap(mWindowLogPM);
-        mWindowLogo->hide();
-    }
+    // Logo 已迁移到 SloganWidget（由 MainWindow 管理）
 
     // FullscreenTipsWidget：全屏提示显示组件
     // - 初始状态：隐藏
@@ -342,11 +333,7 @@ void StereoVideoWidget::setupUIComponentsLayout()
         mFullscreenTipsWidget->raise();
     }
 
-    // 播放窗口 Logo 应该在顶层
-    // - 原因：Logo需要始终可见，不被其他组件覆盖
-    if (mWindowLogo) {
-        mWindowLogo->raise();
-    }
+    // Logo 已迁移到 SloganWidget（由 MainWindow 管理）
 }
 
 void StereoVideoWidget::setupConnections()
@@ -409,17 +396,6 @@ void StereoVideoWidget::resizeEvent(QResizeEvent *e)
     // - Y坐标：0
     if (mFullscreenTipsWidget) {
         mFullscreenTipsWidget->move(QPoint(0, 0));
-    }
-
-    // mWindowLogo 位置：居中（仅移动位置，不控制显示/隐藏）
-    // Logo 的显示/隐藏由 StartRendering()/StopRendering() 统一管理
-    // 修复：移除此处的 show() 调用，避免在视频切换过程中 Logo 被错误地显示
-    // - X坐标：(窗口宽度 - Logo宽度) / 2
-    // - Y坐标：(窗口高度 - Logo高度) / 2
-    if (mWindowLogo) {
-        mWindowLogo->move((width() - mWindowLogo->width()) / 2, (height() - mWindowLogo->height()) / 2);
-        // 注意：不要在这里调用 show()，Logo 的显示由 StopRendering() 控制
-        // 只有在非渲染状态下才显示 Logo（此时 Logo 应该已经被 StopRendering() 显示了）
     }
 
     // 确保OpenGL widget正确调整大小（布局会自动处理，但这里可以添加日志）
@@ -493,34 +469,9 @@ int StereoVideoWidget::StartRendering(StereoFormat stereoFormat, StereoInputForm
 
     isRendering_ = true;
 
-    // BUG-047 诊断：记录 Logo 隐藏前的状态
-    if (logger && mWindowLogo) {
-        logger->info("StereoVideoWidget::StartRendering: BEFORE hide - Logo visible={}, geometry=({},{},{},{}), parent={}",
-            mWindowLogo->isVisible(),
-            mWindowLogo->x(), mWindowLogo->y(), mWindowLogo->width(), mWindowLogo->height(),
-            mWindowLogo->parent() ? "YES" : "NO");
-    }
-
-    // BUG-035 修复：确保 Logo 被正确隐藏
-    // 使用 hide() + lower() + clearFocus() 确保 Logo 完全隐藏且不在顶层
-    if (mWindowLogo) {
-        mWindowLogo->hide();
-        mWindowLogo->lower();  // 确保在 z-order 最底层
-        mWindowLogo->clearFocus();
-    }
-
-    // BUG-047 诊断：记录 Logo 隐藏后的状态
-    if (logger && mWindowLogo) {
-        logger->info("StereoVideoWidget::StartRendering: AFTER hide - Logo visible={}", mWindowLogo->isVisible());
-    }
-
-    // BUG-035 修复：触发立即重绘，确保 Logo 隐藏生效
-    // 使用 repaint() 而不是 update() 来强制同步重绘
-    repaint();
-
     if (logger) {
         logger->info(
-            "StereoVideoWidget::StartRendering: Started with format {}, input {}, output {}, logo hidden",
+            "StereoVideoWidget::StartRendering: Started with format {}, input {}, output {}",
             int(stereoFormat),
             int(stereoInputFormat),
             int(stereoOutputFormat));
@@ -593,23 +544,8 @@ bool StereoVideoWidget::StopRendering()
         oglRenderer->widget()->repaint();
     }
 
-    // 在缓冲区清除后显示 Logo
-    if (mWindowLogo) {
-        // 确保 Logo 在正确的位置并显示
-        mWindowLogo->move((width() - mWindowLogo->width()) / 2, (height() - mWindowLogo->height()) / 2);
-        mWindowLogo->raise();  // 确保 Logo 在顶层
-        mWindowLogo->show();
-
-        if (logger) {
-            logger->info("StereoVideoWidget::StopRendering: Logo shown at ({},{}) size {}x{}, visible={}",
-                mWindowLogo->x(), mWindowLogo->y(),
-                mWindowLogo->width(), mWindowLogo->height(),
-                mWindowLogo->isVisible());
-        }
-    }
-
     if (logger) {
-        logger->info("StereoVideoWidget::StopRendering: Stopped, Logo visible={}", mWindowLogo ? mWindowLogo->isVisible() : false);
+        logger->info("StereoVideoWidget::StopRendering: Stopped");
     }
 
     return true;

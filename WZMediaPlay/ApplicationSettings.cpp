@@ -155,15 +155,16 @@ void ApplicationSettings::read_SplashLogoPath()
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     QVariant variant = setting.value("/MediaPlay/SplashLogoPath");
-    QString splashPath = variant.isNull() ? getResourcesBasePath() + "/logo/SPElg.png"
+    QString splashPath = variant.isNull() ? getResourcesBasePath() + "/logo/SplashLogo.png"
                                            : variant.toString();
 
     // 修复：将相对路径转换为绝对路径
-    // 如果路径以 "./" 开头，则相对于资源目录
-    if (splashPath.startsWith("./")) {
+    // 如果路径以 "./Resources/" 开头，跳过这个前缀（因为 getResourcesBasePath() 已经返回 Resources 目录）
+    if (splashPath.startsWith("./Resources/")) {
+        splashPath = getResourcesBasePath() + "/" + splashPath.mid(12);  // 跳过 "./Resources/"
+    } else if (splashPath.startsWith("./")) {
         splashPath = getResourcesBasePath() + "/" + splashPath.mid(2);
     } else if (!splashPath.isEmpty() && !QDir::isAbsolutePath(splashPath)) {
-        // 如果不是绝对路径，则相对于资源目录
         splashPath = getResourcesBasePath() + "/" + splashPath;
     }
 
@@ -192,12 +193,32 @@ void ApplicationSettings::read_ApplicationGeneral()
     GlobalDef::getInstance()->LANGUAGE = variant.isNull() ? 0 : variant.toInt();
 
     variant = setting.value("/MediaPlay/PlayWindowLogoPath");
-    GlobalDef::getInstance()->PLAY_WINDOW_LOGO_PATH = variant.isNull() ? getResourcesBasePath() + "/logo/PWlg.png"
-                                                                       : variant.toString();
+    QString playWindowLogoPath = variant.isNull() ? getResourcesBasePath() + "/logo/Slogan.png"
+                                                   : variant.toString();
+    // 将相对路径转换为绝对路径
+    if (playWindowLogoPath.startsWith("./Resources/")) {
+        // ./Resources/logo/xxx.png -> getResourcesBasePath()/logo/xxx.png
+        playWindowLogoPath = getResourcesBasePath() + "/" + playWindowLogoPath.mid(12);  // 跳过 "./Resources/"
+    } else if (playWindowLogoPath.startsWith("./")) {
+        playWindowLogoPath = getResourcesBasePath() + "/" + playWindowLogoPath.mid(2);
+    } else if (!playWindowLogoPath.isEmpty() && !QDir::isAbsolutePath(playWindowLogoPath)) {
+        playWindowLogoPath = getResourcesBasePath() + "/" + playWindowLogoPath;
+    }
+    GlobalDef::getInstance()->PLAY_WINDOW_LOGO_PATH = playWindowLogoPath;
 
     variant = setting.value("/MediaPlay/MainWindowLogoPath");
-    GlobalDef::getInstance()->MAIN_WINDOW_LOGO_PATH = variant.isNull() ? getResourcesBasePath() + "/logo/MWlg.png"
-                                                                       : variant.toString();
+    QString mainWindowLogoPath = variant.isNull() ? getResourcesBasePath() + "/logo/MWlg.png"
+                                                   : variant.toString();
+    // 将相对路径转换为绝对路径
+    if (mainWindowLogoPath.startsWith("./Resources/")) {
+        // ./Resources/logo/xxx.png -> getResourcesBasePath()/logo/xxx.png
+        mainWindowLogoPath = getResourcesBasePath() + "/" + mainWindowLogoPath.mid(12);  // 跳过 "./Resources/"
+    } else if (mainWindowLogoPath.startsWith("./")) {
+        mainWindowLogoPath = getResourcesBasePath() + "/" + mainWindowLogoPath.mid(2);
+    } else if (!mainWindowLogoPath.isEmpty() && !QDir::isAbsolutePath(mainWindowLogoPath)) {
+        mainWindowLogoPath = getResourcesBasePath() + "/" + mainWindowLogoPath;
+    }
+    GlobalDef::getInstance()->MAIN_WINDOW_LOGO_PATH = mainWindowLogoPath;
 
     variant = setting.value("/MediaPlay/ScreenshotDir");
     GlobalDef::getInstance()->SCREENSHOT_DIR = variant.isNull() ? QCoreApplication::applicationDirPath() + "/Screenshot" : variant.toString();

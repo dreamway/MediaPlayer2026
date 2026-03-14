@@ -144,22 +144,6 @@ public:
     FullscreenTipsWidget *mFullscreenTipsWidget = nullptr;
 
     /**
-     * mWindowLogo：播放窗口Logo标签
-     * - 位置：窗口中心
-     * - 显示逻辑：未播放视频时显示，播放时隐藏
-     * - 功能：显示应用程序Logo图片
-     */
-    QLabel *mWindowLogo = nullptr;
-
-    /**
-     * mWindowLogPM：播放窗口Logo像素图
-     * - 用途：存储Logo图片数据
-     * - 加载路径：GlobalDef::PLAY_WINDOW_LOGO_PATH
-     * - 与FFmpegView保持一致
-     */
-    QPixmap mWindowLogPM;
-
-    /**
      * SubtitleWidget：字幕显示组件
      * - 位置：窗口底部
      * - 功能：显示字幕文本

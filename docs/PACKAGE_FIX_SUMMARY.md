@@ -46,8 +46,8 @@ endif()
 ### 3. 修复配置文件中的 Logo 路径
 
 原配置文件中的 Logo 文件不存在：
-- `SPElg.png` → 不存在
-- `PWlg.png` → 不存在
+- `SplashLogo.png` → 不存在
+- `Slogan.png` → 不存在
 - `MWlg.png` → 不存在
 
 修复为实际存在的文件：

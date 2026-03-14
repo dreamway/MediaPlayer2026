@@ -317,6 +317,7 @@ set(SOURCES
     ${WZMEDIA_SRC_DIR}/PlayController.cpp
     ${WZMEDIA_SRC_DIR}/RemoteControlServer.cpp
     ${WZMEDIA_SRC_DIR}/ShaderManager.cpp
+    ${WZMEDIA_SRC_DIR}/SloganWidget.cpp
     ${WZMEDIA_SRC_DIR}/StereoVideoWidget.cpp
     ${WZMEDIA_SRC_DIR}/SystemMonitor.cpp
     ${WZMEDIA_SRC_DIR}/TcpServerHelper.cpp
@@ -414,6 +415,7 @@ if(APPLE)
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.leadwit.WZMediaPlayer"
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0.0"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.0"
+        MACOSX_BUNDLE_INFO_PLIST "${WZMEDIA_SRC_DIR}/Resources/Info.plist"
     )
 
     # 拷贝 Resources 目录到 app bundle

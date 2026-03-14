@@ -12,6 +12,7 @@
 #include "gui/SettingsDialog.h"
 #include "videoDecoder/RendererFactory.h"
 #include "camera/CameraOpenGLWidget.hpp"
+#include "SloganWidget.h"
 #include <QVBoxLayout>
 #include <QAccessible>  // 用于 Accessibility 更新
 #include "spdlog/sinks/basic_file_sink.h"
@@ -206,30 +207,29 @@ MainWindow::MainWindow(QWidget *parent)
     // 即使 hide() 也会导致 rhiFlush 崩溃。Camera 功能在 Linux 上暂时禁用。
     // Windows 和 macOS 可以正常使用摄像头功能。
 #ifndef Q_OS_LINUX
-    cameraWidget_ = new CameraOpenGLWidget(ui.playWidget->parentWidget());
+    cameraWidget_ = new CameraOpenGLWidget(this);
     if (cameraWidget_) {
         cameraWidget_->hide();
 
-        // 关键修复：设置与 playWidget 相同的 sizePolicy，确保切换时布局一致
+        // 设置与 playWidget 相同的 sizePolicy
         cameraWidget_->setSizePolicy(ui.playWidget->sizePolicy());
         cameraWidget_->setMinimumSize(ui.playWidget->minimumSize());
         cameraWidget_->setMaximumSize(ui.playWidget->maximumSize());
 
-        QWidget *parentWidget = ui.playWidget->parentWidget();
-        if (parentWidget) {
-            QVBoxLayout *parentLayout = qobject_cast<QVBoxLayout*>(parentWidget->layout());
-            if (parentLayout) {
-                int playWidgetIndex = parentLayout->indexOf(ui.playWidget);
-                if (playWidgetIndex >= 0) {
-                    // 在 playWidget 后面插入，使用相同的 stretch factor
-                    int stretch = parentLayout->stretch(playWidgetIndex);
-                    parentLayout->insertWidget(playWidgetIndex + 1, cameraWidget_, stretch);
-                } else {
-                    parentLayout->addWidget(cameraWidget_);
-                }
+        // 将 cameraWidget_ 插入到与 playWidget 相同的布局中
+        QWidget *playViewWidget = ui.playWidget->parentWidget();
+        if (playViewWidget) {
+            QVBoxLayout *playViewLayout = qobject_cast<QVBoxLayout*>(playViewWidget->layout());
+            if (playViewLayout) {
+                int playWidgetIndex = playViewLayout->indexOf(ui.playWidget);
+                int stretch = playViewLayout->stretch(playWidgetIndex);
+                playViewLayout->insertWidget(playWidgetIndex, cameraWidget_, stretch);
+                logger->info("MainWindow: CameraOpenGLWidget inserted into layout at index {} with stretch {}",
+                    playWidgetIndex, stretch);
             }
         }
-        logger->info("MainWindow: CameraOpenGLWidget created as sibling of StereoVideoWidget");
+
+        logger->info("MainWindow: CameraOpenGLWidget created as sibling of StereoVideoWidget in layout");
     }
 #else
     logger->info("MainWindow: CameraOpenGLWidget disabled on Linux (Qt 6 QOpenGLWidget RHI bug)");
@@ -241,6 +241,60 @@ MainWindow::MainWindow(QWidget *parent)
         // 设置 Camera Widget 到 CameraManager
         cameraManager_->setCameraWidget(cameraWidget_);
         logger->info("MainWindow: CameraManager created and camera widget set");
+    }
+
+    // 创建 SloganWidget（与 StereoVideoWidget 同级）
+    // 用于在未播放视频时显示 Logo，解决 QOpenGLWidget 子控件的 z-order 问题
+    sloganWidget_ = new SloganWidget(this);
+    if (sloganWidget_) {
+        // 设置与 playWidget 相同的 sizePolicy，确保切换时布局一致
+        sloganWidget_->setSizePolicy(ui.playWidget->sizePolicy());
+        sloganWidget_->setMinimumSize(ui.playWidget->minimumSize());
+        sloganWidget_->setMaximumSize(ui.playWidget->maximumSize());
+
+        // 加载 Logo 图片
+        QString logoPath = GlobalDef::getInstance()->PLAY_WINDOW_LOGO_PATH;
+        logger->info("MainWindow: Attempting to load logo from path: {}", logoPath.toStdString());
+
+        // 检查文件是否存在
+        QFile logoFile(logoPath);
+        if (logoFile.exists()) {
+            logger->info("MainWindow: Logo file exists");
+        } else {
+            logger->warn("MainWindow: Logo file does NOT exist at path: {}", logoPath.toStdString());
+        }
+
+        QPixmap logoPixmap;
+        if (logoPixmap.load(logoPath)) {
+            logger->info("MainWindow: Logo pixmap loaded successfully, size: {}x{}", logoPixmap.width(), logoPixmap.height());
+            sloganWidget_->setLogoPixmap(logoPixmap);
+        } else {
+            logger->warn("MainWindow: Failed to load logo pixmap from {}", logoPath.toStdString());
+        }
+
+        // 关键修复：将 SloganWidget 插入到与 playWidget 相同的布局中
+        // playWidget 的父控件是 widget_playView，布局是 verticalLayout_4
+        // 找到 playWidget 在布局中的位置，在同一位置插入 SloganWidget
+        QWidget *playViewWidget = ui.playWidget->parentWidget();
+        if (playViewWidget) {
+            QVBoxLayout *playViewLayout = qobject_cast<QVBoxLayout*>(playViewWidget->layout());
+            if (playViewLayout) {
+                int playWidgetIndex = playViewLayout->indexOf(ui.playWidget);
+                int stretch = playViewLayout->stretch(playWidgetIndex);
+
+                // 在 playWidget 之前插入 SloganWidget（会被放在同一位置）
+                playViewLayout->insertWidget(playWidgetIndex, sloganWidget_, stretch);
+
+                logger->info("MainWindow: SloganWidget inserted into layout at index {} with stretch {}",
+                    playWidgetIndex, stretch);
+            }
+        }
+
+        // 初始状态：显示 SloganWidget，隐藏 playWidget（等待播放）
+        sloganWidget_->show();
+        ui.playWidget->hide();
+
+        logger->info("MainWindow: SloganWidget created as sibling of StereoVideoWidget in layout");
     }
 
     // 创建播放列表管理器
@@ -1845,6 +1899,9 @@ void MainWindow::on_pushButton_stop_clicked()
         ui.pushButton_playPause->setChecked(false);
     }
 
+    // 切换到 SloganWidget 显示 Logo
+    switchToSlogan();
+
     logger->info("on_pushButton_stop_clicked: UI reset completed");
 }
 
@@ -2373,6 +2430,7 @@ void MainWindow::resizeEvent(QResizeEvent *event)
         mDrawWidget->move(ui.playWidget->pos());
         mDrawWidget->resize(ui.playWidget->size());
     }
+    // sloganWidget_ 和 cameraWidget_ 现在在布局中，会自动调整大小
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent *event)
@@ -2499,15 +2557,20 @@ void MainWindow::on_actionOpenCamera_toggled(bool cam_checked)
             logger->error("on_actionOpenCamera_toggled: CameraManager is null");
         }
     } else {
-        // 切换到视频文件 Widget
-        switchToVideoFile();
-        
+        // 关闭摄像头：切换到 SloganWidget 或 StereoVideoWidget
+        // 如果有正在播放的视频，切换到视频；否则切换到 Logo
+        if (playController_ && playController_->isOpened()) {
+            switchToVideoFile();
+        } else {
+            switchToSlogan();
+        }
+
         // 使用 CameraManager 停止和关闭 Camera
         if (cameraManager_) {
             cameraManager_->stopCamera();
             cameraManager_->closeCamera();
             logger->info("on_actionOpenCamera_toggled: Camera stopped and closed");
-        } 
+        }
     }
 }
 
@@ -3521,6 +3584,9 @@ void MainWindow::resetUiWhenPlaybackFinishedNoNext()
     ui.label_totalTime->setText(QStringLiteral("00:00:00"));
     ui.label_playTime->setText(QStringLiteral("00:00:00"));
     ui.pushButton_playPause->setChecked(false);
+
+    // 切换到 SloganWidget 显示 Logo（播放结束且无下一首）
+    switchToSlogan();
 }
 
 void MainWindow::handlePlaybackFinished()
@@ -3703,14 +3769,18 @@ void MainWindow::playNextVideoInList(bool loop)
 // Widget 切换方法实现
 void MainWindow::switchToVideoFile()
 {
-    // 关键修复：先显示 playWidget，再隐藏 cameraWidget，避免布局闪烁
+    // 关键修复：先显示 playWidget，再隐藏其他 widget
+    // 不使用 raise()，避免影响布局 z-order
     if (ui.playWidget) {
         ui.playWidget->show();
-        ui.playWidget->raise();
     }
 
     if (cameraWidget_) {
         cameraWidget_->hide();
+    }
+
+    if (sloganWidget_) {
+        sloganWidget_->hide();
     }
 
     // 从摄像头切回视频时关闭摄像头，避免摄像头在后台继续运行（BUG 14 完全修复）
@@ -3733,14 +3803,17 @@ void MainWindow::switchToVideoFile()
 
 void MainWindow::switchToCamera()
 {
-    // 关键修复：先隐藏 playWidget，再显示 cameraWidget，确保布局一致
+    // Widgets 现在在布局中，只需控制可见性
     if (ui.playWidget) {
         ui.playWidget->hide();
     }
 
+    if (sloganWidget_) {
+        sloganWidget_->hide();
+    }
+
     if (cameraWidget_) {
         cameraWidget_->show();
-        cameraWidget_->raise(); // 确保在最上层
 
         // 确保 OpenGL 上下文已初始化
         // 如果 widget 还没有被显示过，initializeGL 可能还没有被调用
@@ -3757,6 +3830,24 @@ void MainWindow::switchToCamera()
         if (logger) {
             logger->error("MainWindow: cameraWidget_ is null!");
         }
+    }
+}
+
+void MainWindow::switchToSlogan()
+{
+    // 切换到 SloganWidget 显示 Logo
+    // Widgets 现在在布局中，只需控制可见性
+    if (sloganWidget_) {
+        sloganWidget_->show();
+    }
+    if (ui.playWidget) {
+        ui.playWidget->hide();
+    }
+    if (cameraWidget_) {
+        cameraWidget_->hide();
+    }
+    if (logger) {
+        logger->info("MainWindow: Switched to SloganWidget");
     }
 }
 

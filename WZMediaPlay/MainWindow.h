@@ -19,6 +19,7 @@ class LogWindow;
 class CameraManager;
 class CameraOpenGLWidget;
 class PlayListManager;
+class SloganWidget;
 
 typedef enum WindowSizeState { WINDOW_MINIMIZED = 100, WINDOW_MAXIMIZED = 101, WINDOW_FULLSCREEN = 102, WINDOW_NORMAL } WindowSizeState;
 
@@ -206,10 +207,12 @@ private:
     CameraManager *cameraManager_ = nullptr;  // Camera 管理器
     CameraOpenGLWidget *cameraWidget_ = nullptr;  // Camera Widget（与 playWidget 同级）
     PlayListManager *playListManager_ = nullptr;  // 播放列表管理器
-    
+    SloganWidget *sloganWidget_ = nullptr;  // Logo 显示 Widget（与 playWidget 同级）
+
     // Widget 切换方法
     void switchToVideoFile();
     void switchToCamera();
+    void switchToSlogan();
 
     QActionGroup *stereoFormatActionGroup;
     QActionGroup *inputActionGroup;

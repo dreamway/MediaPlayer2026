@@ -75,7 +75,7 @@
 |------|------|
 | **现象** | macOS 中点击停止按钮后，mWindowLogo 未显示出来 |
 | **根因** | `SystemConfig.ini` 中配置的 `MainWindowLogoPath=./Resources/logo/MWlg.png`，但 `MWlg.png` 文件不存在 |
-| **修复内容** | 将 `MainWindowLogoPath` 改为 `./Resources/logo/PWlg.png`（已存在的文件） |
+| **修复内容** | 将 `MainWindowLogoPath` 改为 `./Resources/logo/Slogan.png`（已存在的文件） |
 | **修复文件** | `WZMediaPlay/config/SystemConfig.ini` |
 | **优先级** | P1 |
 | **状态** | ✅ 已修复待验证 |

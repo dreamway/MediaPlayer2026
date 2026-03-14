@@ -125,7 +125,7 @@ void ApplicationSettings::read_SplashLogoPath()
     QSettings setting(cfgPath, QSettings::IniFormat);
 
     QVariant variant = setting.value("/MediaPlay/SplashLogoPath");
-    GlobalDef::getInstance()->SPLASH_LOGO_PATH = variant.isNull() ? QString(QCoreApplication::applicationDirPath() + "/Resources/logo/SPElg.png")
+    GlobalDef::getInstance()->SPLASH_LOGO_PATH = variant.isNull() ? QString(QCoreApplication::applicationDirPath() + "/Resources/logo/SplashLogo.png")
                                                                   : variant.toString();
     variant = setting.value("/MediaPlay/SplashLogoWidth");
     GlobalDef::getInstance()->SPLASH_LOGO_WIDTH = variant.isNull() ? 100 : variant.toInt();
@@ -151,7 +151,7 @@ void ApplicationSettings::read_ApplicationGeneral()
     GlobalDef::getInstance()->LANGUAGE = variant.isNull() ? 0 : variant.toInt();
 
     variant = setting.value("/MediaPlay/PlayWindowLogoPath");
-    GlobalDef::getInstance()->PLAY_WINDOW_LOGO_PATH = variant.isNull() ? QString(QCoreApplication::applicationDirPath() + "/Resources/logo/PWlg.png")
+    GlobalDef::getInstance()->PLAY_WINDOW_LOGO_PATH = variant.isNull() ? QString(QCoreApplication::applicationDirPath() + "/Resources/logo/Slogan.png")
                                                                        : variant.toString();
 
     variant = setting.value("/MediaPlay/MainWindowLogoPath");
