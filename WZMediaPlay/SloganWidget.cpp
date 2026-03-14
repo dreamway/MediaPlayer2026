@@ -44,29 +44,14 @@ void SloganWidget::setLogoPixmap(const QPixmap &pixmap)
     logoPixmap_ = pixmap;
 
     if (logoLabel_ && !logoPixmap_.isNull()) {
-        // 根据窗口大小缩放 Logo，保持宽高比
-        QSize labelSize = size();
-
-        // 如果窗口大小为 0，使用默认大小
-        if (labelSize.isEmpty()) {
-            labelSize = QSize(400, 300);
-        }
-
-        QSize scaledSize = logoPixmap_.size().scaled(labelSize, Qt::KeepAspectRatio);
-
-        // 确保 Logo 不会太大
-        if (scaledSize.isEmpty()) {
-            scaledSize = logoPixmap_.size();
-        }
-
-        QPixmap scaledPixmap = logoPixmap_.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        logoLabel_->setPixmap(scaledPixmap);
-        logoLabel_->resize(scaledSize);
+        // 保持 Logo 原始大小，不进行缩放
+        // Logo 居中显示在黑色背景上
+        logoLabel_->setPixmap(logoPixmap_);
+        logoLabel_->resize(logoPixmap_.size());
 
         if (logger) {
-            logger->info("SloganWidget::setLogoPixmap: Logo set, original size={}x{}, scaled size={}x{}, widget size={}x{}",
+            logger->info("SloganWidget::setLogoPixmap: Logo set at original size={}x{}, widget size={}x{}",
                         logoPixmap_.width(), logoPixmap_.height(),
-                        scaledSize.width(), scaledSize.height(),
                         width(), height());
         }
     } else {
@@ -97,22 +82,6 @@ void SloganWidget::resizeEvent(QResizeEvent *event)
         logger->info("SloganWidget::resizeEvent: new size={}x{}", width(), height());
     }
 
-    // 重新缩放 Logo 以适应新窗口大小
-    if (logoLabel_ && !logoPixmap_.isNull()) {
-        QSize labelSize = size();
-        QSize scaledSize = logoPixmap_.size().scaled(labelSize, Qt::KeepAspectRatio);
-
-        QPixmap scaledPixmap = logoPixmap_.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        logoLabel_->setPixmap(scaledPixmap);
-        logoLabel_->resize(scaledSize);
-
-        if (logger) {
-            logger->info("SloganWidget::resizeEvent: Logo rescaled to {}x{}", scaledSize.width(), scaledSize.height());
-        }
-    } else {
-        if (logger) {
-            logger->warn("SloganWidget::resizeEvent: No logo to rescale, logoLabel_={}, pixmap.isNull()={}",
-                        (void*)logoLabel_, logoPixmap_.isNull());
-        }
-    }
+    // Logo 保持原始大小，不需要重新缩放
+    // QLabel 在布局中会自动居中
 }

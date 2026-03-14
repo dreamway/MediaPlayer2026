@@ -1655,14 +1655,14 @@ void MainWindow::on_pushButton_max_clicked()
             this->showMaximized();
             ui.verticalLayout->insertWidget(0, ui.widget_title);
             ui.widget_playList->show();
-            ui.verticalLayout_4->insertWidget(1, ui.widget_playControl);
+            ui.verticalLayout_4->addWidget(ui.widget_playControl);
             mWindowSizeState = WINDOW_MAXIMIZED;
             //GlobalDef::getInstance()->B_WINDOW_SIZE_MAXIMIZED = true;
         } else {
             this->showNormal();
             ui.verticalLayout->insertWidget(0, ui.widget_title);
             ui.widget_playList->show();
-            ui.verticalLayout_4->insertWidget(1, ui.widget_playControl);
+            ui.verticalLayout_4->addWidget(ui.widget_playControl);
             resize(GlobalDef::getInstance()->MIN_WINDOW_WIDTH, GlobalDef::getInstance()->MIN_WINDOW_HEIGHT);
             if (GlobalDef::getInstance()->MIN_WINDOW_POSITION_X % 2 == 0) {
                 GlobalDef::getInstance()->MIN_WINDOW_POSITION_X = GlobalDef::getInstance()->MIN_WINDOW_POSITION_X + 1;
@@ -1696,13 +1696,13 @@ void MainWindow::on_pushButton_fullScreen_clicked()
             this->showMaximized();
             ui.verticalLayout->insertWidget(0, ui.widget_title);
             ui.widget_playList->show();
-            ui.verticalLayout_4->insertWidget(1, ui.widget_playControl);
+            ui.verticalLayout_4->addWidget(ui.widget_playControl);
             mWindowSizeState = WINDOW_MAXIMIZED;
         } else {
             this->showNormal();
             ui.verticalLayout->insertWidget(0, ui.widget_title);
             ui.widget_playList->show();
-            ui.verticalLayout_4->insertWidget(1, ui.widget_playControl);
+            ui.verticalLayout_4->addWidget(ui.widget_playControl);
             resize(GlobalDef::getInstance()->MIN_WINDOW_WIDTH, GlobalDef::getInstance()->MIN_WINDOW_HEIGHT);
             if (GlobalDef::getInstance()->MIN_WINDOW_POSITION_X % 2 == 0) {
                 GlobalDef::getInstance()->MIN_WINDOW_POSITION_X = GlobalDef::getInstance()->MIN_WINDOW_POSITION_X + 1;
@@ -1872,10 +1872,18 @@ void MainWindow::on_pushButton_close_clicked()
 //    play
 void MainWindow::on_pushButton_stop_clicked()
 {
+    // BUG-051: 防止频繁切换导致状态混乱
+    if (isStateTransitioning_) {
+        logger->debug("on_pushButton_stop_clicked: State transition in progress, ignoring");
+        return;
+    }
+
     if (playController_->isStopped()) {
         logger->debug("already Stopped, no need to stop");
         return;
     }
+
+    isStateTransitioning_ = true;
 
     playController_->stop();
 
@@ -1901,6 +1909,11 @@ void MainWindow::on_pushButton_stop_clicked()
 
     // 切换到 SloganWidget 显示 Logo
     switchToSlogan();
+
+    // BUG-051: 延迟重置状态标志，防止快速连续操作
+    QTimer::singleShot(200, [this]() {
+        isStateTransitioning_ = false;
+    });
 
     logger->info("on_pushButton_stop_clicked: UI reset completed");
 }
@@ -1946,14 +1959,30 @@ void MainWindow::on_pushButton_previous_clicked()
 
 void MainWindow::on_pushButton_playPause_clicked()
 {
+    // BUG-051: 防止频繁切换导致状态混乱
+    if (isStateTransitioning_) {
+        logger->debug("on_pushButton_playPause_clicked: State transition in progress, ignoring");
+        return;
+    }
+
     logger->info("playWidget isPlaying:{}, isPause:{}", playController_->isPlaying(), playController_->isPaused());
 
     if (playController_->isPlaying()) {
+        isStateTransitioning_ = true;
         playController_->pause();
         ui.pushButton_playPause->setChecked(false);
+        // 延迟重置状态标志
+        QTimer::singleShot(200, [this]() {
+            isStateTransitioning_ = false;
+        });
     } else if (playController_->isPaused()) {
+        isStateTransitioning_ = true;
         playController_->play();
         ui.pushButton_playPause->setChecked(true);
+        // 延迟重置状态标志
+        QTimer::singleShot(200, [this]() {
+            isStateTransitioning_ = false;
+        });
     } else {
         if (ui.tabWidget_playList->currentIndex() == 0) {
             int index = ui.listWidget_playlist->row(ui.listWidget_playlist->currentItem());
@@ -2030,16 +2059,15 @@ void MainWindow::on_pushButton_open_clicked()
 //    list
 void MainWindow::on_pushButton_add_clicked()
 {
-    QString filepath = QFileDialog::getOpenFileName(
+    // BUG-050 修复：使用 getOpenFileNames 支持多选
+    QStringList filepaths = QFileDialog::getOpenFileNames(
         this,
         QString(tr("请选择要添加的视频文件")),
         "./",
         "video(*.mp4 *.flv *.f4v *.webm *.m4v *.mov *.3gp *.3g2 *.rm *.rmvb *.wmv *.avi *.asf *.mpg *.mpeg *.mpe *.ts *.div *.dv *.divx *.vob *.mkv *.wzmp4 "
         "*.wzavi *.wzmkv *.wzmov *.wzmpg)");
-    if (!filepath.isEmpty()) {
-        QStringList addList;
-        addList.append(filepath);
-        updatePlayList(addList, GlobalDef::getInstance()->PLAY_LIST_DATA.playlist_current_index);
+    if (!filepaths.isEmpty()) {
+        updatePlayList(filepaths, GlobalDef::getInstance()->PLAY_LIST_DATA.playlist_current_index);
     }
 }
 
@@ -2502,40 +2530,52 @@ void MainWindow::on_pushButton_menu_clicked()
 
 void MainWindow::on_actionOpenCamera_toggled(bool cam_checked)
 {
-    if (playController_->isOpened()) {
-        playController_->stop();
-        // 同步等待播放完全停止后再切换，避免视频在后台继续运行（BUG 14）
-        QEventLoop loop;
-        QTimer timeout;
-        timeout.setSingleShot(true);
-        connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
-        QMetaObject::Connection conn = connect(playController_, &PlayController::playbackStateChanged, this, [&loop](PlaybackState state) {
-            if (state == PlaybackState::Stopped) {
-                loop.quit();
-            }
-        });
-        timeout.start(3000);
-        loop.exec();
-        disconnect(conn);
-        if (!playController_->isStopped()) {
-            logger->warn("on_actionOpenCamera_toggled: Stop did not complete within 3s, proceeding anyway");
-        }
-    }
-
     if (cam_checked) {
+        // BUG-048: 切换到摄像头前保存当前视频播放状态
+        if (playController_->isOpened()) {
+            savedVideoPathBeforeCamera_ = mCurMovieFilename;
+            savedVideoPositionBeforeCamera_ = currentElapsedInSeconds_;
+            wasPlayingBeforeCamera_ = playController_->isPlaying();
+            logger->info("on_actionOpenCamera_toggled: Saved video state before camera - path={}, position={}s, wasPlaying={}",
+                        savedVideoPathBeforeCamera_.toStdString(), savedVideoPositionBeforeCamera_, wasPlayingBeforeCamera_);
+
+            playController_->stop();
+            // 同步等待播放完全停止后再切换，避免视频在后台继续运行（BUG 14）
+            QEventLoop loop;
+            QTimer timeout;
+            timeout.setSingleShot(true);
+            connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+            QMetaObject::Connection conn = connect(playController_, &PlayController::playbackStateChanged, this, [&loop](PlaybackState state) {
+                if (state == PlaybackState::Stopped) {
+                    loop.quit();
+                }
+            });
+            timeout.start(3000);
+            loop.exec();
+            disconnect(conn);
+            if (!playController_->isStopped()) {
+                logger->warn("on_actionOpenCamera_toggled: Stop did not complete within 3s, proceeding anyway");
+            }
+        } else {
+            // 没有正在播放的视频，清空保存的状态
+            savedVideoPathBeforeCamera_.clear();
+            savedVideoPositionBeforeCamera_ = 0;
+            wasPlayingBeforeCamera_ = false;
+        }
+
         // 使用 CameraManager 管理 Camera
         if (cameraManager_) {
             QList<QCameraDevice> cameras = cameraManager_->getAvailableCameras();
             if (cameras.size() > 0) {
-                logger->info("on_actionOpenCamera_toggled: Found {} cameras, opening first one: {}", 
+                logger->info("on_actionOpenCamera_toggled: Found {} cameras, opening first one: {}",
                     cameras.size(), cameras[0].description().toStdString());
-                
+
                 // 使用 CameraManager 打开和启动 Camera
                 if (cameraManager_->openCamera(cameras[0])) {
                     if (cameraManager_->startCamera()) {
                         // 切换到 Camera Widget（在启动 Camera 之后）
                         switchToCamera();
-                        
+
                         // 确保 cameraWidget_ 的 OpenGL 上下文已初始化
                         if (cameraWidget_) {
                             cameraWidget_->show();
@@ -2557,9 +2597,31 @@ void MainWindow::on_actionOpenCamera_toggled(bool cam_checked)
             logger->error("on_actionOpenCamera_toggled: CameraManager is null");
         }
     } else {
-        // 关闭摄像头：切换到 SloganWidget 或 StereoVideoWidget
-        // 如果有正在播放的视频，切换到视频；否则切换到 Logo
-        if (playController_ && playController_->isOpened()) {
+        // 关闭摄像头：切换到 SloganWidget 或恢复之前的视频播放
+        // BUG-048: 如果切换到摄像头前有视频在播放，恢复播放
+        if (!savedVideoPathBeforeCamera_.isEmpty() && QFile::exists(savedVideoPathBeforeCamera_)) {
+            logger->info("on_actionOpenCamera_toggled: Restoring video playback - path={}, position={}s",
+                        savedVideoPathBeforeCamera_.toStdString(), savedVideoPositionBeforeCamera_);
+
+            // 打开视频
+            openPath(savedVideoPathBeforeCamera_, false);
+
+            // 如果之前有播放位置，seek 到该位置
+            if (savedVideoPositionBeforeCamera_ > 0) {
+                // 等待视频打开完成后再 seek
+                QTimer::singleShot(500, [this]() {
+                    if (playController_ && playController_->isOpened()) {
+                        playController_->seek(savedVideoPositionBeforeCamera_ * 1000);
+                        logger->info("on_actionOpenCamera_toggled: Seeked to {} seconds", savedVideoPositionBeforeCamera_);
+                    }
+                });
+            }
+
+            // 清空保存的状态
+            savedVideoPathBeforeCamera_.clear();
+            savedVideoPositionBeforeCamera_ = 0;
+            wasPlayingBeforeCamera_ = false;
+        } else if (playController_ && playController_->isOpened()) {
             switchToVideoFile();
         } else {
             switchToSlogan();
@@ -3102,7 +3164,10 @@ void MainWindow::on_listWidget_playlist_itemDoubleClicked(QListWidgetItem *item)
 {
     int index = -1;
     int playListIndex = ui.tabWidget_playList->currentIndex();
-    
+
+    // BUG-049: 设置标志，防止 replayCurrentItemChanged 干扰
+    isDoubleclickingPlaylist_ = true;
+
     if (playListIndex == 0) {
         index = ui.listWidget_playlist->row(item);
     } else {
@@ -3115,6 +3180,7 @@ void MainWindow::on_listWidget_playlist_itemDoubleClicked(QListWidgetItem *item)
         if (!mvPath.isEmpty()) {
             // 设置当前播放项（不发送信号，避免与openPath()重复触发）
             playListManager_->setCurrentVideo(index, playListIndex, false);
+            logger->info("on_listWidget_playlist_itemDoubleClicked: Opening video from beginning: {}", mvPath.toStdString());
             openPath(mvPath, false);
         } else {
             logger->warn("MainWindow::on_listWidget_playlist_itemDoubleClicked: Invalid video path at index {}", index);
@@ -3123,8 +3189,14 @@ void MainWindow::on_listWidget_playlist_itemDoubleClicked(QListWidgetItem *item)
         // 回退到旧逻辑
         QString mvPath
             = GlobalDef::getInstance()->PLAY_LIST_DATA.play_list[playListIndex].video_list[index].video_path;
+        logger->info("on_listWidget_playlist_itemDoubleClicked (fallback): Opening video from beginning: {}", mvPath.toStdString());
         openPath(mvPath, false);
     }
+
+    // BUG-049: 延迟重置标志，确保 replayCurrentItemChanged 不会被意外触发
+    QTimer::singleShot(300, [this]() {
+        isDoubleclickingPlaylist_ = false;
+    });
 }
 
 void MainWindow::reply_listWidget_playlist_itemSelectionChanged(QListWidgetItem *listWidgetItem)
@@ -3143,6 +3215,18 @@ void MainWindow::replayCurrentItemChanged(QListWidgetItem *current, QListWidgetI
         return;
     }
 
+    // BUG-049: 如果正在双击播放列表，跳过此处理（由 on_listWidget_playlist_itemDoubleClicked 处理）
+    if (isDoubleclickingPlaylist_) {
+        logger->debug("replayCurrentItemChanged: Skipping due to double-click in progress");
+        return;
+    }
+
+    // BUG-051: 如果正在进行状态切换，跳过
+    if (isStateTransitioning_) {
+        logger->debug("replayCurrentItemChanged: Skipping due to state transition in progress");
+        return;
+    }
+
     if (current) {
         logger->info("################3333333333 replayCurrentItemChanged. current:{}", current->text().toStdString());
 
@@ -3156,15 +3240,8 @@ void MainWindow::replayCurrentItemChanged(QListWidgetItem *current, QListWidgetI
                 QString videoPath = videoList[currentRow].video_path;
                 logger->info("replayCurrentItemChanged: Opening video: {}", videoPath.toStdString());
 
-                // 停止当前播放并打开新视频
-                if (playController_) {
-                    playController_->stop();
-                    if (playController_->open(videoPath)) {
-                        playController_->play();
-                    } else {
-                        logger->error("replayCurrentItemChanged: Failed to open video: {}", videoPath.toStdString());
-                    }
-                }
+                // 使用 openPath() 而不是直接调用 playController_->open()，确保 UI 正确更新
+                openPath(videoPath, false);
             }
         }
     }
@@ -3769,18 +3846,16 @@ void MainWindow::playNextVideoInList(bool loop)
 // Widget 切换方法实现
 void MainWindow::switchToVideoFile()
 {
-    // 关键修复：先显示 playWidget，再隐藏其他 widget
-    // 不使用 raise()，避免影响布局 z-order
-    if (ui.playWidget) {
-        ui.playWidget->show();
-    }
-
+    // 关键修复：先隐藏其他 widget，再显示 playWidget
+    // 避免两个 widget 同时可见时的 z-order 问题
     if (cameraWidget_) {
         cameraWidget_->hide();
     }
-
     if (sloganWidget_) {
         sloganWidget_->hide();
+    }
+    if (ui.playWidget) {
+        ui.playWidget->show();
     }
 
     // 从摄像头切回视频时关闭摄像头，避免摄像头在后台继续运行（BUG 14 完全修复）
@@ -3835,16 +3910,16 @@ void MainWindow::switchToCamera()
 
 void MainWindow::switchToSlogan()
 {
-    // 切换到 SloganWidget 显示 Logo
-    // Widgets 现在在布局中，只需控制可见性
-    if (sloganWidget_) {
-        sloganWidget_->show();
-    }
+    // 关键修复：先隐藏其他 widget，再显示 SloganWidget
+    // 避免两个 widget 同时可见时的 z-order 问题
     if (ui.playWidget) {
         ui.playWidget->hide();
     }
     if (cameraWidget_) {
         cameraWidget_->hide();
+    }
+    if (sloganWidget_) {
+        sloganWidget_->show();
     }
     if (logger) {
         logger->info("MainWindow: Switched to SloganWidget");

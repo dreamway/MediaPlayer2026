@@ -3,6 +3,9 @@
 Accessibility Element Wrapper for macOS UI Automation
 """
 
+import ctypes
+from ctypes import Structure, c_double, POINTER
+
 from ApplicationServices import (
     AXUIElementCopyAttributeValue,
     AXUIElementPerformAction,
@@ -17,7 +20,18 @@ from ApplicationServices import (
     kAXDecrementAction,
     kAXMinValueAttribute,
     kAXMaxValueAttribute,
+    kAXPositionAttribute,
+    kAXSizeAttribute,
 )
+
+
+# Define CGPoint and CGSize structures for ctypes
+class CGPoint(Structure):
+    _fields_ = [("x", c_double), ("y", c_double)]
+
+
+class CGSize(Structure):
+    _fields_ = [("width", c_double), ("height", c_double)]
 
 
 class AXElementError(Exception):
@@ -67,6 +81,69 @@ class AXElement:
         if result == 0 and value is not None:
             return str(value)
         return ""
+
+    def get_position(self) -> tuple:
+        """
+        Get the position of the element (x, y).
+
+        Returns:
+            tuple: (x, y) position, or (0, 0) if not available.
+        """
+        result, value = AXUIElementCopyAttributeValue(
+            self._element, kAXPositionAttribute, None
+        )
+        if result == 0 and value is not None:
+            try:
+                import Quartz
+                # Use ctypes to properly handle the output parameter
+                point = CGPoint(0.0, 0.0)
+                # Get the AXValueGetValue function with proper signature
+                ax_value_get_value = Quartz.AXValueGetValue
+                ax_value_get_value.restype = bool
+                ax_value_get_value.argtypes = [ctypes.c_void_p, ctypes.c_int, POINTER(CGPoint)]
+
+                if ax_value_get_value(int(value), Quartz.kAXValueCGPointType, ctypes.byref(point)):
+                    return (int(point.x), int(point.y))
+            except (TypeError, AttributeError, ImportError, OSError) as e:
+                pass
+        return (0, 0)
+
+    def get_size(self) -> tuple:
+        """
+        Get the size of the element (width, height).
+
+        Returns:
+            tuple: (width, height), or (0, 0) if not available.
+        """
+        result, value = AXUIElementCopyAttributeValue(
+            self._element, kAXSizeAttribute, None
+        )
+        if result == 0 and value is not None:
+            try:
+                import Quartz
+                # Use ctypes to properly handle the output parameter
+                size = CGSize(0.0, 0.0)
+                # Get the AXValueGetValue function with proper signature
+                ax_value_get_value = Quartz.AXValueGetValue
+                ax_value_get_value.restype = bool
+                ax_value_get_value.argtypes = [ctypes.c_void_p, ctypes.c_int, POINTER(CGSize)]
+
+                if ax_value_get_value(int(value), Quartz.kAXValueCGSizeType, ctypes.byref(size)):
+                    return (int(size.width), int(size.height))
+            except (TypeError, AttributeError, ImportError, OSError) as e:
+                pass
+        return (0, 0)
+
+    def get_frame(self) -> tuple:
+        """
+        Get the frame of the element (x, y, width, height).
+
+        Returns:
+            tuple: (x, y, width, height), or (0, 0, 0, 0) if not available.
+        """
+        x, y = self.get_position()
+        w, h = self.get_size()
+        return (x, y, w, h)
 
     def get_value(self) -> str:
         """

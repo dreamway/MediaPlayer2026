@@ -282,6 +282,18 @@ private:
 
     bool playerIsPlayingBeforeScreenLockOrPowerSleep;
     bool mIsNotRegistered = false;
+
+    // BUG-048: 切换摄像头时保存视频播放状态
+    QString savedVideoPathBeforeCamera_;      // 切换到摄像头前播放的视频路径
+    int savedVideoPositionBeforeCamera_ = 0;  // 切换到摄像头前的播放位置（秒）
+    bool wasPlayingBeforeCamera_ = false;     // 切换到摄像头前是否正在播放
+
+    // BUG-051: 防止频繁播放/停止切换导致状态混乱
+    bool isStateTransitioning_ = false;       // 标记是否正在进行状态切换
+
+    // BUG-049: 防止双击时 replayCurrentItemChanged 干扰
+    bool isDoubleclickingPlaylist_ = false;   // 标记是否正在双击播放列表
+
 #ifdef INSPECT
     QTimer *inspectTimer_;
 

@@ -59,8 +59,20 @@ class LogoTest(TestBase):
             # 等待窗口显示和 geometry 初始化
             time.sleep(3)
 
-            # 截取应用窗口
-            screenshot_path = self.screenshot.capture_window_by_title("WZMediaPlayer", "bug035_startup_logo.png")
+            # 获取窗口位置和大小
+            window = self.window_controller.get_main_window()
+            if window:
+                frame = window.get_frame()
+                print(f"  窗口 frame: {frame}")
+                x, y, w, h = frame
+                if w > 0 and h > 0:
+                    # 截取应用窗口
+                    screenshot_path = self.screenshot.capture_region(x, y, w, h, "bug035_startup_logo.png")
+                else:
+                    # 如果无法获取窗口大小，使用全屏
+                    screenshot_path = self.screenshot.capture_full_screen("bug035_startup_logo.png")
+            else:
+                screenshot_path = self.screenshot.capture_full_screen("bug035_startup_logo.png")
             print(f"  截图保存: {screenshot_path}")
 
             # 分析截图 - 检查顶部区域（视频播放区域）
@@ -153,8 +165,17 @@ class LogoTest(TestBase):
             # 等待视频开始播放
             time.sleep(WAIT_TIMES["medium"])
 
-            # 截图
-            screenshot_path = self.screenshot.capture_window_by_title("WZMediaPlayer", "bug047_during_playback.png")
+            # 获取窗口位置和大小
+            window = self.window_controller.get_main_window()
+            if window:
+                frame = window.get_frame()
+                x, y, w, h = frame
+                if w > 0 and h > 0:
+                    screenshot_path = self.screenshot.capture_region(x, y, w, h, "bug047_during_playback.png")
+                else:
+                    screenshot_path = self.screenshot.capture_full_screen("bug047_during_playback.png")
+            else:
+                screenshot_path = self.screenshot.capture_full_screen("bug047_during_playback.png")
             print(f"  截图保存: {screenshot_path}")
 
             # 分析截图 - 视频播放区域应该有视频内容
@@ -225,8 +246,17 @@ class LogoTest(TestBase):
             KeyboardInput.send_key("s")  # 's' 是停止快捷键
             time.sleep(WAIT_TIMES["short"])
 
-            # 截图
-            screenshot_path = self.screenshot.capture_window_by_title("WZMediaPlayer", "bug047_after_stop.png")
+            # 获取窗口位置和大小
+            window = self.window_controller.get_main_window()
+            if window:
+                frame = window.get_frame()
+                x, y, w, h = frame
+                if w > 0 and h > 0:
+                    screenshot_path = self.screenshot.capture_region(x, y, w, h, "bug047_after_stop.png")
+                else:
+                    screenshot_path = self.screenshot.capture_full_screen("bug047_after_stop.png")
+            else:
+                screenshot_path = self.screenshot.capture_full_screen("bug047_after_stop.png")
             print(f"  截图保存: {screenshot_path}")
 
             # 分析截图 - 应该显示 Logo
