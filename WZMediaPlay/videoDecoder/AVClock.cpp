@@ -214,20 +214,21 @@ void AVClock::pause(bool paused)
 void AVClock::reset()
 {
     QMutexLocker locker(&mutex_);
-    
+
     audioPts_ = 0.0;
     hasAudioPts_ = false;
     videoPts_ = 0.0;
     delay_ = 0.0;
     nbUpdated_ = 0;
-    
+    initialValue_ = 0.0;  // BUG-049: 重置 initialValue_，防止新视频打开时使用旧值
+
     if (clockType_ == ExternalClock) {
         timer_.invalidate();
     }
-    
-    // 不重置 initialValue_ 和 speed_
-    
+
+    // 不重置 speed_（用户偏好设置）
+
     SPDLOG_LOGGER_INFO(logger, "AVClock reset");
-    
+
     emit resetted();
 }
